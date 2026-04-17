@@ -2,106 +2,56 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>AutoDocs - Gerador</title>
+    <title>AutoDocs - Mf.nandes</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <div class="container">
-    <h2>Gerador de Termo de Responsabilidade</h2>
+    <h2>Gerador de Termos</h2>
     
     <form id="docForm">
         <div class="input-group">
-            <label for="userName">Nome do Colaborador</label>
+            <label for="userName">Colaborador</label>
             <input type="text" id="userName" placeholder="Nome completo" required>
+        </div>
+        
+        <div class="row">
+            <div class="input-group">
+                <label for="dataInicio">Data Início</label>
+                <input type="date" id="dataInicio" required>
+            </div>
+            <div class="input-group">
+                <label for="dataTermino">Data Término</label>
+                <input type="date" id="dataTermino" required>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <label for="tipoDoc">Tipo de Documento</label>
+            <select id="tipoDoc" required>
+                <option value="Termo de Responsabilidade">Termo de Responsabilidade</option>
+                <option value="Termo de Confidencialidade">Termo de Confidencialidade</option>
+                <option value="Termo de Uso">Termo de Uso de Equipamento</option>
+            </select>
         </div>
 
         <div class="input-group">
             <label for="equipo">Equipamento / Patrimônio</label>
-            <input type="text" id="equipo" placeholder="Ex: Notebook" required>
+            <input type="text" id="equipo" placeholder="Ex: Notebook Dell Latitude" required>
         </div>
 
-        <button type="button" id="btnGenerate" class="btn-primary">Gerar Termo</button>
+        <button type="button" id="btnGenerate" class="btn-primary">Gerar e Baixar</button>
         <div id="loader" class="loader hidden"></div>
     </form>
 
     <div id="resultArea" class="hidden">
-        <hr>
-        <div id="document-preview" class="preview-box"></div>
-        <button id="btnDownload" class="btn-success">Baixar .DOCX</button>
+        <div class="success-banner">
+            <p id="document-preview"></p>
+        </div>
     </div>
 </div>
 
-<script>
-   window.onload = function() {
-    const btnGenerate = document.getElementById('btnGenerate');
-    const resultArea = document.getElementById('resultArea');
-    const loader = document.getElementById('loader');
-    const previewText = document.getElementById('document-preview');
-
-    btnGenerate.onclick = async function() {
-        const nome = document.getElementById('userName').value;
-        const info = document.getElementById('equipo').value;
-
-        if (!nome || !info) {
-            alert("Por favor, preencha todos os campos.");
-            return;
-        }
-
-        // UI - Iniciando
-        btnGenerate.disabled = true;
-        btnGenerate.innerText = "Processando...";
-        loader.classList.remove('hidden');
-        resultArea.classList.add('hidden');
-
-        const payload = {
-            nomeColaborador: nome,
-            info: info,
-            tipo: "Termo de Responsabilidade",
-            dataInicio: new Date().toLocaleDateString('pt-BR')
-        };
-
-        try {
-            const response = await fetch('/docs/gerar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = `Termo_${nome.replace(/\s+/g, '_')}.docx`;
-                document.body.appendChild(a);
-                a.click();
-                
-                // Limpeza da URL de memória
-                setTimeout(() => {
-                    window.URL.revokeObjectURL(url);
-                    a.remove();
-                }, 100);
-
-                // UI - Sucesso
-                resultArea.classList.remove('hidden');
-                previewText.innerText = "Documento gerado com sucesso para: " + nome;
-            } else {    
-                alert("Ocorreu um erro no servidor ao gerar o documento.");    
-            }
-        } catch (error) {
-            console.error("Erro na requisição:", error);
-            alert("Não foi possível conectar ao servidor. Verifique se o Spring Boot está rodando.");
-        } finally {
-            // UI - Reset Final (Sempre executa, dando erro ou não)
-            btnGenerate.disabled = false;
-            btnGenerate.innerText = "Gerar Termo";
-            loader.classList.add('hidden');
-        }
-    };
-};
-</script>
+<script src="script.js"></script>
 </body>
 </html>

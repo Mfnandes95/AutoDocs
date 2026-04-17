@@ -5,15 +5,23 @@ window.onload = function() {
     const previewText = document.getElementById('document-preview');
 
     btnGenerate.onclick = async function() {
+        // 1. Coleta de dados (IDs atualizados conforme o novo HTML)
         const nome = document.getElementById('userName').value;
         const info = document.getElementById('equipo').value;
+        const dataInicioRaw = document.getElementById('dataInicio').value;
+        const dataTerminoRaw = document.getElementById('dataTermino').value;
+        const tipoDoc = document.getElementById('tipoDoc').value;
 
-        if (!nome || !info) {
+        // Validação básica
+        if (!nome || !info || !dataInicioRaw || !dataTerminoRaw) {
             alert("Por favor, preencha todos os campos.");
             return;
         }
 
-        // UI - Iniciando
+        // Função para formatar YYYY-MM-DD (HTML) para DD/MM/YYYY (Brasil/Word)
+        const formatarData = (data) => data.split('-').reverse().join('/');
+
+        // 2. Preparação da UI
         btnGenerate.disabled = true;
         btnGenerate.innerText = "Processando...";
         loader.classList.remove('hidden');
@@ -22,11 +30,13 @@ window.onload = function() {
         const payload = {
             nomeColaborador: nome,
             info: info,
-            tipo: "Termo de Responsabilidade",
-            dataInicio: new Date().toLocaleDateString('pt-BR')
+            tipo: tipoDoc,
+            dataInicio: formatarData(dataInicioRaw),
+            dataTermino: formatarData(dataTerminoRaw)
         };
 
         try {
+            console.log("Enviando dados para o servidor Debian...");
             const response = await fetch('/docs/gerar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -34,33 +44,36 @@ window.onload = function() {
             });
 
             if (response.ok) {
+                console.log("Documento gerado! Iniciando download...");
+                
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 
                 const a = document.createElement('a');
                 a.style.display = 'none';
                 a.href = url;
-                a.download = `Termo_${nome.replace(/\s+/g, '_')}.docx`;
+                // Nome do arquivo dinâmico baseado no tipo e nome do colaborador
+                a.download = `${tipoDoc.replace(/\s+/g, '_')}_${nome.replace(/\s+/g, '_')}.docx`;
                 document.body.appendChild(a);
                 a.click();
                 
-                // Limpeza da URL de memória
                 setTimeout(() => {
                     window.URL.revokeObjectURL(url);
                     a.remove();
                 }, 100);
 
-                // UI - Sucesso
+                // Feedback visual de sucesso
                 resultArea.classList.remove('hidden');
-                previewText.innerText = "Documento gerado com sucesso para: " + nome;
+                previewText.innerText = `Sucesso! O download do ${tipoDoc} para ${nome} foi iniciado.`;
             } else {    
-                alert("Ocorreu um erro no servidor ao gerar o documento.");    
+                console.error("Erro no servidor:", response.status);
+                alert("O servidor encontrou um problema ao gerar o DOCX.");    
             }
         } catch (error) {
             console.error("Erro na requisição:", error);
-            alert("Não foi possível conectar ao servidor. Verifique se o Spring Boot está rodando.");
+            alert("Não foi possível conectar ao backend Java. Verifique se o bootRun está ativo.");
         } finally {
-            // UI - Reset Final (Sempre executa, dando erro ou não)
+            // Restaura o estado original da UI independente de sucesso ou erro
             btnGenerate.disabled = false;
             btnGenerate.innerText = "Gerar Termo";
             loader.classList.add('hidden');
