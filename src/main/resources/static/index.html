@@ -2,106 +2,309 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>AutoDocs - Gerador</title>
-    <link rel="stylesheet" href="style.css">
+    <title>AutoDocs — Sistema</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00ff88;
+            --primary-dim: #00cc6a;
+            --bg: #0a0f1e;
+            --card: #111827;
+            --card2: #1a2235;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --border: #1e2d45;
+            --danger: #ff4455;
+            --warn: #ffaa00;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Syne', sans-serif;
+            background: var(--bg); color: var(--text);
+            display: flex; min-height: 100vh; overflow: hidden;
+        }
+
+        /* ── SIDEBAR ── */
+        nav {
+            width: 240px; min-width: 240px; height: 100vh;
+            background: var(--card); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; padding: 24px 14px;
+            position: fixed; top: 0; left: 0; z-index: 10;
+        }
+        .logo {
+            display: flex; align-items: center; gap: 10px;
+            margin-bottom: 32px; padding: 0 6px;
+        }
+        .logo-icon {
+            width: 34px; height: 34px; background: var(--primary);
+            border-radius: 7px; display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace; font-weight: 700;
+            font-size: 13px; color: #0a0f1e;
+            box-shadow: 0 0 14px rgba(0,255,136,0.25);
+        }
+        .logo h2 { font-size: 16px; font-weight: 800; }
+        .logo span { color: var(--primary); }
+        nav ul { list-style: none; flex: 1; }
+        nav li {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 14px; cursor: pointer; border-radius: 8px;
+            margin-bottom: 3px; font-size: 13px; font-weight: 600;
+            color: var(--muted); transition: all 0.2s; letter-spacing: 0.2px;
+            border: 1px solid transparent;
+        }
+        nav li .ic { font-size: 14px; }
+        nav li:hover { background: var(--border); color: var(--text); }
+        nav li.active { background: rgba(0,255,136,0.08); color: var(--primary); border-color: rgba(0,255,136,0.18); }
+        .nav-bottom {
+            border-top: 1px solid var(--border); padding-top: 14px; margin-top: 8px;
+        }
+        .nav-bottom .logout {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 14px; cursor: pointer; border-radius: 8px;
+            font-size: 13px; font-weight: 600; color: var(--muted);
+            transition: all 0.2s; text-decoration: none; border: 1px solid transparent;
+        }
+        .nav-bottom .logout:hover { color: var(--danger); border-color: rgba(255,68,85,0.2); background: rgba(255,68,85,0.06); }
+        .nav-version {
+            font-family: 'JetBrains Mono', monospace; font-size: 10px;
+            color: var(--border); padding: 10px 14px 0;
+        }
+
+        /* ── MAIN ── */
+        main {
+            margin-left: 240px; flex: 1; height: 100vh;
+            overflow-y: auto; padding: 28px 32px;
+        }
+        .page-header { margin-bottom: 24px; }
+        .page-header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+        .page-header p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+        /* ── SECTIONS ── */
+        .section { display: none; animation: fadeIn 0.25s ease; }
+        .section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* ── CARDS ── */
+        .card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 22px;  margin-bottom: 18px;
+        }
+        .card-title {
+            font-size: 11px; font-weight: 700; color: var(--muted);
+            text-transform: uppercase; letter-spacing: 1px;
+            margin-bottom: 18px; display: flex; align-items: center; gap: 8px;
+        }
+        .card-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+        /* ── FORM ── */
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .form-grid .full { grid-column: 1 / -1; }
+        .input-group { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+        input, select, textarea {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); border-radius: 8px; padding: 10px 14px;
+            font-size: 13px; font-family: 'Syne', sans-serif;
+            width: 100%; transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,255,136,0.07); }
+        input[type="file"] { padding: 8px 14px; cursor: pointer; }
+        input[type="file"]::-webkit-file-upload-button {
+            background: var(--border); color: var(--text); border: none;
+            border-radius: 5px; padding: 5px 12px; font-family: 'Syne', sans-serif;
+            font-size: 12px; cursor: pointer; margin-right: 10px;
+        }
+        select option { background: var(--card2); }
+
+        /* ── BUTTONS ── */
+        .btn {
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 11px 20px; border-radius: 8px; border: none;
+            font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .btn-primary { background: var(--primary); color: #0a0f1e; width: 100%; margin-top: 6px; }
+        .btn-primary:hover { background: var(--primary-dim); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,255,136,0.2); }
+        .btn-primary:active { transform: translateY(0); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-secondary { background: var(--card2); color: var(--text); border: 1px solid var(--border); width: 100%; margin-top: 6px; }
+        .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* ── STATS ── */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+        .stat-item {
+            background: var(--card2); border: 1px solid var(--border);
+            border-radius: 10px; padding: 18px 16px; text-align: center;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .stat-item:hover { border-color: var(--primary); transform: translateY(-2px); }
+        .stat-item p { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+        .stat-item h3 { font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 700; color: var(--primary); }
+        .stat-item h3.danger { color: var(--danger); }
+        .stat-item h3.warn   { color: var(--warn); }
+
+        /* ── BUSCA ── */
+        .result-box {
+            margin-top: 16px; background: var(--card2); border: 1px solid var(--border);
+            border-radius: 10px; padding: 16px 20px; display: none;
+        }
+        .result-box.visible { display: block; }
+        .result-box.ok  { border-left: 3px solid var(--primary); }
+        .result-box.err { border-left: 3px solid var(--danger); }
+        .result-row {
+            display: flex; justify-content: space-between;
+            padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+        }
+        .result-row:last-child { border-bottom: none; }
+        .result-row span:first-child { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .result-row span:last-child { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+        /* ── TOAST ── */
+        .toast {
+            position: fixed; bottom: 24px; right: 24px;
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 10px; padding: 13px 18px; font-size: 13px;
+            display: flex; align-items: center; gap: 10px;
+            transform: translateY(60px); opacity: 0;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 999; max-width: 300px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.ok  { border-left: 3px solid var(--primary); }
+        .toast.err { border-left: 3px solid var(--danger); }
+
+        /* ── SPINNER ── */
+        .spinner {
+            width: 15px; height: 15px; border: 2px solid #0a0f1e;
+            border-top-color: transparent; border-radius: 50%;
+            animation: spin 0.6s linear infinite; display: none;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── SCROLLBAR ── */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+    </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>Gerador de Termo de Responsabilidade</h2>
-    
-    <form id="docForm">
-        <div class="input-group">
-            <label for="userName">Nome do Colaborador</label>
-            <input type="text" id="userName" placeholder="Nome completo" required>
-        </div>
-
-        <div class="input-group">
-            <label for="equipo">Equipamento / Patrimônio</label>
-            <input type="text" id="equipo" placeholder="Ex: Notebook" required>
-        </div>
-
-        <button type="button" id="btnGenerate" class="btn-primary">Gerar Termo</button>
-        <div id="loader" class="loader hidden"></div>
-    </form>
-
-    <div id="resultArea" class="hidden">
-        <hr>
-        <div id="document-preview" class="preview-box"></div>
-        <button id="btnDownload" class="btn-success">Baixar .DOCX</button>
+<!-- SIDEBAR -->
+<nav>
+    <div class="logo">
+        <div class="logo-icon">AD</div>
+        <h2>Auto<span>Docs</span></h2>
     </div>
-</div>
+    <ul>
+        <li onclick="show('gerar', this)" class="active"><span class="ic">📄</span> Gerar Documento</li>
+        <li onclick="show('verificar', this)"><span class="ic">🔍</span> Verificar Aparelho</li>
+        <li onclick="window.location.href='/dashboard.html'"><span class="ic">📊</span> Dashboard</li>
+    </ul>
+    <div class="nav-bottom">
+        <a href="/logout" class="logout"><span class="ic">🚪</span> Sair</a>
+        <p class="nav-version">v2.1.0</p>
+    </div>
+</nav>
 
-<script>
-   window.onload = function() {
-    const btnGenerate = document.getElementById('btnGenerate');
-    const resultArea = document.getElementById('resultArea');
-    const loader = document.getElementById('loader');
-    const previewText = document.getElementById('document-preview');
+<main>
 
-    btnGenerate.onclick = async function() {
-        const nome = document.getElementById('userName').value;
-        const info = document.getElementById('equipo').value;
+    <!-- ── GERAR ── -->
+    <div id="gerar" class="section active">
+        <div class="page-header">
+            <h1>Novo Termo</h1>
+            <p>Preencha os dados e selecione o template para gerar o documento.</p>
+        </div>
 
-        if (!nome || !info) {
-            alert("Por favor, preencha todos os campos.");
-            return;
-        }
+        <div class="card">
+            <p class="card-title">📁 Template</p>
+            <div class="input-group">
+                <label>Arquivo .docx base</label>
+                <input type="file" id="fileInput" accept=".docx">
+            </div>
+        </div>
 
-        // UI - Iniciando
-        btnGenerate.disabled = true;
-        btnGenerate.innerText = "Processando...";
-        loader.classList.remove('hidden');
-        resultArea.classList.add('hidden');
+        <div class="card">
+            <p class="card-title">👤 Colaborador</p>
+            <div class="form-grid">
+                <div class="input-group full">
+                    <label>Nome completo</label>
+                    <input type="text" id="nome" placeholder="Ex: João da Silva">
+                </div>
+                <div class="input-group">
+                    <label>Unidade</label>
+                    <select id="unidade">
+                        <option value="Macapá">Sede — Macapá</option>
+                        <option value="Escritório de Santana">Escritório de Santana</option>
+                        <option value="Escritório de Porto Grande">Escritório de Porto Grande</option>
+                        <option value="Escritório de Oiapoque">Escritório de Oiapoque</option>
+                        <option value="Escritório de Laranjal do Jari">Escritório de Laranjal do Jari</option>
+                        <option value="Escritório de Tartarugalzinho">Escritório de Tartarugalzinho</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Patrimônio</label>
+                    <input type="text" id="patrimonioInput" placeholder="Ex: JUR-001">
+                </div>
+            </div>
+        </div>
 
-        const payload = {
-            nomeColaborador: nome,
-            info: info,
-            tipo: "Termo de Responsabilidade",
-            dataInicio: new Date().toLocaleDateString('pt-BR')
-        };
+        <div class="card">
+            <p class="card-title">🖥️ Equipamento</p>
+            <div class="form-grid">
+                <div class="input-group full">
+                    <label>Descrição do equipamento</label>
+                    <input type="text" id="info" placeholder="Ex: Notebook Dell Inspiron 15, SN: ABC123">
+                </div>
+                <div class="input-group">
+                    <label>Tipo de Termo</label>
+                    <select id="tipo">
+                        <option value="RESPONSABILIDADE">Termo de Responsabilidade</option>
+                        <option value="DEVOLUCAO">Termo de Devolução</option>
+                        <option value="EMPRESTIMO">Termo de Empréstimo</option>
+                    </select>
+                </div>
+                <div class="input-group"></div>
+                <div class="input-group">
+                    <label>Data de Início</label>
+                    <input type="date" id="dataInicio">
+                </div>
+                <div class="input-group">
+                    <label>Data de Término</label>
+                    <input type="date" id="dataTermino">
+                </div>
+            </div>
+        </div>
 
-        try {
-            const response = await fetch('/docs/gerar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+        <button class="btn btn-primary" id="btnGerar" onclick="gerarDinamico()">
+            <span class="spinner" id="spinnerGerar"></span>
+            <span id="btnGerarText">⬇ Gerar e Baixar Documento</span>
+        </button>
+    </div>
 
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = `Termo_${nome.replace(/\s+/g, '_')}.docx`;
-                document.body.appendChild(a);
-                a.click();
-                
-                // Limpeza da URL de memória
-                setTimeout(() => {
-                    window.URL.revokeObjectURL(url);
-                    a.remove();
-                }, 100);
+    <!-- ── VERIFICAR ── -->
+    <div id="verificar" class="section">
+        <div class="page-header">
+            <h1>Verificar Aparelho</h1>
+            <p>Localize um equipamento pelo número de patrimônio.</p>
+        </div>
+        <div class="card">
+            <p class="card-title">🔍 Busca</p>
+            <div class="form-grid">
+                <div class="input-group">
+                    <label>Número de Patrimônio</label>
+                    <input type="text" id="searchPatrimonio" placeholder="Ex: JUR-001"
+                        onkeydown="if(event.key==='Enter') buscarAparelho()">
+                </div>
+                <div style="display:flex; align-items:flex-end;">
+                    <button class="btn btn-secondary" onclick="buscarAparelho()">Buscar</button>
+                </div>
+            </div>
+            <div id="resultadoDaBusca" class="result-box"></div>
+        </div>
+    </div>
+</main>
 
-                // UI - Sucesso
-                resultArea.classList.remove('hidden');
-                previewText.innerText = "Documento gerado com sucesso para: " + nome;
-            } else {    
-                alert("Ocorreu um erro no servidor ao gerar o documento.");    
-            }
-        } catch (error) {
-            console.error("Erro na requisição:", error);
-            alert("Não foi possível conectar ao servidor. Verifique se o Spring Boot está rodando.");
-        } finally {
-            // UI - Reset Final (Sempre executa, dando erro ou não)
-            btnGenerate.disabled = false;
-            btnGenerate.innerText = "Gerar Termo";
-            loader.classList.add('hidden');
-        }
-    };
-};
-</script>
+<div class="toast" id="toast"></div>
+<script src="/js/main.js"></script>
 </body>
 </html>

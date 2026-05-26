@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoDocs — Dashboard de Equipamentos</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00ff88;
+            --primary-dim: #00cc6a;
+            --bg: #0a0f1e;
+            --card: #111827;
+            --card2: #1a2235;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --border: #1e2d45;
+            --danger: #ff4455;
+            --warn: #ffaa00;
+            --info: #00bbff;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Syne', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 32px;
+        }
+
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,136,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,136,0.02) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none; z-index: 0;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
+
+        /* ── HEADER ── */
+        header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 16px; }
+        .header-left { display: flex; align-items: center; gap: 14px; }
+        .logo-icon {
+            width: 40px; height: 40px; background: var(--primary); border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 15px; color: #0a0f1e;
+            box-shadow: 0 0 16px rgba(0,255,136,0.3); flex-shrink: 0;
+        }
+        .header-titles h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+        .header-titles h1 span { color: var(--primary); }
+        .header-titles p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+        .filtros { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .search-wrapper { position: relative; display: flex; align-items: center; }
+        .search-wrapper .search-icon { position: absolute; left: 12px; color: var(--muted); font-size: 14px; pointer-events: none; }
+        
+        input[type="text"], select {
+            background: var(--card); border: 1px solid var(--border); color: var(--text);
+            border-radius: 8px; padding: 9px 14px; font-size: 13px;
+            font-family: 'Syne', sans-serif; transition: all 0.2s;
+        }
+        input[type="text"] { padding-left: 36px; width: 220px; }
+        input[type="text"]:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,255,136,0.08); }
+
+        .btn { display: flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 8px; border: none; font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: var(--primary); color: #0a0f1e; }
+        .btn-primary:hover { background: var(--primary-dim); transform: translateY(-1px); }
+        .btn-secondary { background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+        .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* ── NAVEGAÇÃO POR ABAS (TABS) ── */
+        .nav-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border); margin-bottom: 28px; padding-bottom: 1px; }
+        .tab-link {
+            background: none; border: none; color: var(--muted); font-family: 'Syne', sans-serif;
+            font-size: 13px; font-weight: 700; padding: 10px 16px; cursor: pointer;
+            position: relative; transition: color 0.2s;
+        }
+        .tab-link:hover { color: var(--text); }
+        .tab-link.active { color: var(--primary); }
+        .tab-link.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.25s ease; }
+
+        /* ── STATS RÁPIDAS ── */
+        .quick-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; margin-bottom: 28px; }
+        .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+        .stat-card .stat-label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+        .stat-card .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 700; color: var(--primary); line-height: 1; }
+        .stat-card .stat-value.danger { color: var(--danger); }
+        .stat-card .stat-value.info { color: var(--info); }
+
+        /* ── SEÇÃO INVENTÁRIO MULTIDISPOSITIVOS ── */
+        .secao-inventario { background: var(--card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; }
+        .inventario-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .inventario-header h3 { font-size: 15px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        .sub-secao-titulo { font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.8px; margin: 28px 0 12px 0; display: flex; align-items: center; gap: 8px; }
+        .sub-secao-titulo::after { content: ''; flex: 1; height: 1px; background: rgba(30, 45, 69, 0.4); }
+
+        .planilha-ativos { width: 100%; border-collapse: collapse; text-align: left; }
+        .planilha-ativos th { padding: 10px 14px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid var(--border); font-weight: 700; }
+        .planilha-ativos tbody tr { border-bottom: 1px solid var(--border); transition: background-color 0.15s; }
+        .planilha-ativos tbody tr:hover { background-color: var(--card2); }
+        .planilha-ativos td { padding: 12px 14px; font-size: 13px; color: var(--text); vertical-align: middle; }
+
+        .txt-mono-primary { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--primary); }
+        .txt-mono-muted { font-family: 'JetBrains Mono', monospace; color: var(--muted); }
+        
+        .badge-sit { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .sit-disponivel { background: rgba(0,255,136,0.1); color: var(--primary); }
+        .sit-manutencao { background: rgba(255,170,0,0.1); color: var(--warn); }
+        .sit-alocado { background: rgba(0,187,255,0.1); color: var(--info); }
+
+        .btn-table-action { background: none; border: none; cursor: pointer; font-size: 13px; padding: 4px; margin-left: 6px; border-radius: 4px; transition: all 0.2s; }
+        .btn-table-action:hover { background: var(--border); }
+
+        /* ── GRID UNIDADES ── */
+        .section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+        #dashboard { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+
+        /* ── CARD PRÉDIO ── */
+        .predio-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: all 0.2s; }
+        .predio-card:hover { border-color: rgba(0,255,136,0.3); transform: translateY(-2px); }
+        .predio-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--card2); }
+        .predio-nome { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+        .predio-badge { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; background: rgba(0,255,136,0.1); color: var(--primary); border: 1px solid rgba(0,255,136,0.2); border-radius: 20px; padding: 2px 8px; }
+        .predio-body { padding: 14px 18px; }
+        .equip-list { display: flex; flex-direction: column; gap: 8px; }
+        .equip-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+        .equip-patrimonio { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--primary); }
+
+        /* ── MODAL DIALOG (CADASTRO) ── */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(5, 7, 14, 0.8);
+            backdrop-filter: blur(4px); display: none; align-items: center;
+            justify-content: center; z-index: 1000; padding: 16px;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 12px; width: 100%; max-width: 460px;
+            padding: 24px; animation: modalUp 0.3s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        @keyframes modalUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-title { font-size: 16px; font-weight: 800; margin-bottom: 20px; color: var(--text); }
+        .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+        .form-group label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+        .form-group input, .form-group select { width: 100%; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+
+        #loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; color: var(--muted); gap: 10px; }
+        .spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .toast { position: fixed; bottom: 24px; right: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; font-size: 13px; transform: translateY(60px); opacity: 0; transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index: 999; }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.ok { border-left: 3px solid var(--primary); }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <header>
+        <div class="header-left">
+            <div class="logo-icon">AD</div>
+            <div class="header-titles">
+                <h1>Auto<span>Docs</span></h1>
+                <p>Gerenciamento de Infraestrutura</p>
+            </div>
+        </div>
+        <div class="filtros">
+            <div class="search-wrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="filtroPredio" placeholder="Filtrar por prédio...">
+            </div>
+            <button class="btn btn-primary" onclick="filtrarPredio()">Filtrar</button>
+            <button class="btn btn-secondary" id="btnAtualizar" onclick="carregarDados()">⟳ Atualizar</button>
+        </div>
+    </header>
+
+    <nav class="nav-tabs">
+        <button class="tab-link active" onclick="switchTab('tab-distribuicao')">📍 Distribuição por Unidade</button>
+        <button class="tab-link" onclick="switchTab('tab-inventario')">📦 Planilha de Inventário</button>
+    </nav>
+
+    <div class="quick-stats">
+        <div class="stat-card"><span class="stat-label">Total de ativos</span><span class="stat-value" id="statTotal">—</span></div>
+        <div class="stat-card"><span class="stat-label">Unidades</span><span class="stat-value info" id="statUnidades">—</span></div>
+        <div class="stat-card"><span class="stat-label">Ativos</span><span class="stat-value" id="statAtivos">—</span></div>
+        <div class="stat-card"><span class="stat-label">Avariados</span><span class="stat-value danger" id="statAvariados">—</span></div>
+    </div>
+
+    <div id="tab-distribuicao" class="tab-content active">
+        <p class="section-title">📍 Equipamentos Alocados</p>
+        <div id="loading"><div class="spinner"></div><span>Carregando dados...</span></div>
+        <div id="dashboard"></div>
+    </div>
+
+    <div id="tab-inventario" class="tab-content">
+        <div class="secao-inventario">
+            <div class="inventario-header">
+                <h3>Inventário de Ativos da TI</h3>
+                <button id="btn-novo-item" class="btn btn-primary" style="display: none;" onclick="abrirModalCadastro()">+ Cadastrar Item</button>
+            </div>
+
+            <div class="sub-secao-titulo">💻 Notebooks Dell</div>
+            <table class="planilha-ativos">
+                <thead><tr><th>Modelo / Identificação</th><th>Patrimônio</th><th>Situação</th><th class="th-acoes-inv" style="display: none; text-align: right;">Ações</th></tr></thead>
+                <tbody id="tabela-dell-body"></tbody>
+            </table>
+
+            <div class="sub-secao-titulo">💻 Notebooks HP</div>
+            <table class="planilha-ativos">
+                <thead><tr><th>Modelo / Identificação</th><th>Patrimônio</th><th>Situação</th><th class="th-acoes-inv" style="display: none; text-align: right;">Ações</th></tr></thead>
+                <tbody id="tabela-hp-body"></tbody>
+            </table>
+
+            <div class="sub-secao-titulo">📱 Periféricos, Dispositivos & Desktops</div>
+            <table class="planilha-ativos">
+                <thead><tr><th>Dispositivo</th><th>Patrimônio</th><th>Situação</th><th class="th-acoes-inv" style="display: none; text-align: right;">Ações</th></tr></thead>
+                <tbody id="tabela-outros-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<div class="modal-overlay" id="modalCadastro">
+    <div class="modal-card">
+        <div class="modal-title">Novo Ativo de Hardware</div>
+        <form id="formCadastroAtivo" onsubmit="salvarNovoAtivo(event)">
+            <div class="form-group">
+                <label for="nomeEquipamento">Equipamento (Ex: Notebook Dell Vostro)</label>
+                <input type="text" id="nomeEquipamento" required placeholder="Marca, Modelo ou Tipo...">
+            </div>
+            <div class="form-group">
+                <label for="patrimonio">Código de Patrimônio</label>
+                <input type="text" id="patrimonio" required placeholder="Ex: SEBRAE-2026-XYZ" style="font-family:'JetBrains Mono';">
+            </div>
+            <div class="form-group">
+                <label for="situacao">Situação Inicial</label>
+                <select id="situacao">
+                    <option value="Disponível">Disponível</option>
+                    <option value="Alocado">Alocado</option>
+                    <option value="Manutenção">Manutenção</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalCadastro()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Gravar no Banco</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/dashboard.js"></script>
+<script src="/js/inventario.js"></script>
+<script>
+    // Gerenciador de Abas interno do HTML
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-link').forEach(l => l.classList.remove('active'));
+        
+        document.getElementById(tabId).classList.add('active');
+        event.currentTarget.classList.add('active');
+    }
+</script>
+</body>
+</html>

@@ -26,26 +26,26 @@ repositories {
 
 
 dependencies {
-    // ESTES SÃO OS NOMES CORRETOS
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
     
     // Automação de Word
     implementation 'com.deepoove:poi-tl:1.12.1'
+    implementation 'org.apache.poi:poi-ooxml:5.2.3'
     
-    // Banco de Dados e Lombok
-    runtimeOnly 'com.h2database:h2'
-    compileOnly 'org.projectlombok:lombok'
-    annotationProcessor 'org.projectlombok:lombok'
-    
-    // Teste (Simplificado para não dar erro)
+    // Banco de Dados
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // Teste
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 
-    implementation 'org.apache.poi:poi-ooxml:5.2.3'
-    
-    implementation 'org.apache.poi:poi-ooxml:5.2.3'
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
 tasks.named('test') {

@@ -6,11 +6,11 @@ import java.util.ArrayList;
 public class Orgao {
     
     private String nomeOrgao;
-    private List<Usuario> colaboradores;
+    private List<UsuarioEntity> colaboradores;
     private String emailDaUnidade;
     private String termosAtivos;
 
-    public Orgao(String nomeOrgao, List<Usuario> colaboradores, String emailDaUnidade, String termosAtivos){
+    public Orgao(String nomeOrgao, List<UsuarioEntity> colaboradores, String emailDaUnidade, String termosAtivos){
         this.nomeOrgao = nomeOrgao;
         this.emailDaUnidade = emailDaUnidade;
         this.termosAtivos = termosAtivos;
@@ -21,7 +21,7 @@ public class Orgao {
         return nomeOrgao;
     }   
 
-    public List<Usuario> getColaboradores() {
+    public List<UsuarioEntity> getColaboradores() {
         return colaboradores;
     }
 
