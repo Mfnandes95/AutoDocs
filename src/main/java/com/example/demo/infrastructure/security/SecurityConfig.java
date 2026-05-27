@@ -11,6 +11,11 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
@@ -28,18 +33,22 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            // 1. Ativa a configuração do CORS Source no filtro do Spring Security
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
-                    "/login.html", "/register.html", "/dashboard.html",
+                    "/login.html", "/register.html",
                     "/login", "/register",
                     "/js/**", "/css/**", "/images/**",
                     "/*.js", "/*.css",
                     "/error"
                 ).permitAll()
+                // Garante que apenas usuários com autoridade literal GESTOR acessem o painel
+                .requestMatchers("/dashboard.html", "/dashboard/**").hasAuthority("GESTOR")
                 .anyRequest().authenticated()
             )
             .authenticationProvider(authenticationProvider())
@@ -48,7 +57,8 @@ public class SecurityConfig {
                 .loginProcessingUrl("/login")
                 .usernameParameter("email")
                 .passwordParameter("senha")
-                .defaultSuccessUrl("/index.html", true)
+                // Redireciona para o dashboard correto após autenticação bem-sucedida
+                .defaultSuccessUrl("/dashboard.html", true)
                 .failureUrl("/login.html?error=true")
                 .permitAll()
             )
@@ -61,6 +71,26 @@ public class SecurityConfig {
             );
 
         return http.build();
+    }
+
+    // 2. Declaração do Bean explicitamente dentro da classe SecurityConfig
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        
+        configuration.setAllowedOriginPatterns(Arrays.asList(
+            "http://localhost:5173",
+            "https://localhost:5173",
+            "https://*.up.railway.app"
+        ));
+        
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Cache-Control"));
+        configuration.setAllowCredentials(true);
+        
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     @Bean
