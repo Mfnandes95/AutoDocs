@@ -81,7 +81,8 @@ public class SecurityConfig {
         configuration.setAllowedOriginPatterns(Arrays.asList(
             "http://localhost:5173",
             "https://localhost:5173",
-            "https://*.up.railway.app"
+            "https://*.up.railway.app",
+            "https://*.vercel.app"
         ));
         
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
