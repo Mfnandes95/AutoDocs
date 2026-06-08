@@ -5,7 +5,7 @@ WORKDIR /app
 # Copia todos os ficheiros do repositório para dentro do contêiner
 COPY . .
 
-# Executa o build do Gradle para gerar o arquivo .jar (ignora os testes)
+# Executa o build do Gradle para gerar o arquivo .jar (ignora os testes para poupar tempo)
 RUN gradle build -x test --no-daemon
 
 # Estágio 2: Execução (Runtime)
