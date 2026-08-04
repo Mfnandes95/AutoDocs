@@ -24,24 +24,31 @@ repositories {
 	mavenCentral()
 }
 
-
 dependencies {
+    // ── CORE SPRING ──
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     
-    // Automação de Word
+    // ── OPS & INFRAESTRUTURA (NOVO) ──
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    
+    // ── BANCO DE DADOS & MIGRAÇÕES (NOVO) ──
+    runtimeOnly 'org.postgresql:postgresql'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql' 
+    
+    // ── AUTOMAÇÃO DE DOCUMENTOS (WORD) ──
     implementation 'com.deepoove:poi-tl:1.12.1'
     implementation 'org.apache.poi:poi-ooxml:5.2.3'
     
-    // Banco de Dados
-    runtimeOnly 'org.postgresql:postgresql'
-
-    // Teste
+    // ── DESENVOLVIMENTO & TESTES ──
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 
+    // ── LOMBOK ──
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     testCompileOnly 'org.projectlombok:lombok'

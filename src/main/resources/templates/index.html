@@ -1,8 +1,14 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoDocs — Sistema</title>
+    
+    <!-- Meta tags CSRF para integração segura com Spring Security via JavaScript -->
+    <meta name="_csrf" th:content="${_csrf?.token}" content="">
+    <meta name="_csrf_header" th:content="${_csrf?.headerName}" content="X-CSRF-TOKEN">
+
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -87,7 +93,7 @@
         /* ── CARDS ── */
         .card {
             background: var(--card); border: 1px solid var(--border);
-            border-radius: 12px; padding: 22px;  margin-bottom: 18px;
+            border-radius: 12px; padding: 22px; margin-bottom: 18px;
         }
         .card-title {
             font-size: 11px; font-weight: 700; color: var(--muted);
@@ -130,19 +136,6 @@
         .btn-secondary { background: var(--card2); color: var(--text); border: 1px solid var(--border); width: 100%; margin-top: 6px; }
         .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
 
-        /* ── STATS ── */
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
-        .stat-item {
-            background: var(--card2); border: 1px solid var(--border);
-            border-radius: 10px; padding: 18px 16px; text-align: center;
-            transition: border-color 0.2s, transform 0.2s;
-        }
-        .stat-item:hover { border-color: var(--primary); transform: translateY(-2px); }
-        .stat-item p { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
-        .stat-item h3 { font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 700; color: var(--primary); }
-        .stat-item h3.danger { color: var(--danger); }
-        .stat-item h3.warn   { color: var(--warn); }
-
         /* ── BUSCA ── */
         .result-box {
             margin-top: 16px; background: var(--card2); border: 1px solid var(--border);
@@ -151,14 +144,7 @@
         .result-box.visible { display: block; }
         .result-box.ok  { border-left: 3px solid var(--primary); }
         .result-box.err { border-left: 3px solid var(--danger); }
-        .result-row {
-            display: flex; justify-content: space-between;
-            padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px;
-        }
-        .result-row:last-child { border-bottom: none; }
-        .result-row span:first-child { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-        .result-row span:last-child { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-
+        
         /* ── TOAST ── */
         .toast {
             position: fixed; bottom: 24px; right: 24px;
@@ -207,7 +193,6 @@
 </nav>
 
 <main>
-
     <!-- ── GERAR ── -->
     <div id="gerar" class="section active">
         <div class="page-header">
@@ -218,7 +203,7 @@
         <div class="card">
             <p class="card-title">📁 Template</p>
             <div class="input-group">
-                <label>Arquivo .docx base</label>
+                <label for="fileInput">Arquivo .docx base</label>
                 <input type="file" id="fileInput" accept=".docx">
             </div>
         </div>
@@ -227,11 +212,11 @@
             <p class="card-title">👤 Colaborador</p>
             <div class="form-grid">
                 <div class="input-group full">
-                    <label>Nome completo</label>
+                    <label for="nome">Nome completo</label>
                     <input type="text" id="nome" placeholder="Ex: João da Silva">
                 </div>
                 <div class="input-group">
-                    <label>Unidade</label>
+                    <label for="unidade">Unidade</label>
                     <select id="unidade">
                         <option value="Macapá">Sede — Macapá</option>
                         <option value="Escritório de Santana">Escritório de Santana</option>
@@ -242,7 +227,7 @@
                     </select>
                 </div>
                 <div class="input-group">
-                    <label>Patrimônio</label>
+                    <label for="patrimonioInput">Patrimônio</label>
                     <input type="text" id="patrimonioInput" placeholder="Ex: JUR-001">
                 </div>
             </div>
@@ -252,30 +237,30 @@
             <p class="card-title">🖥️ Equipamento</p>
             <div class="form-grid">
                 <div class="input-group full">
-                    <label>Descrição do equipamento</label>
+                    <label for="info">Descrição do equipamento</label>
                     <input type="text" id="info" placeholder="Ex: Notebook Dell Inspiron 15, SN: ABC123">
                 </div>
                 <div class="input-group">
-                    <label>Tipo de Termo</label>
+                    <label for="tipo">Tipo de Termo</label>
                     <select id="tipo">
                         <option value="RESPONSABILIDADE">Termo de Responsabilidade</option>
                         <option value="DEVOLUCAO">Termo de Devolução</option>
                         <option value="EMPRESTIMO">Termo de Empréstimo</option>
                     </select>
                 </div>
-                <div class="input-group"></div>
+                <!-- Removido o input-group vazio redundante e ajustado via grid -->
                 <div class="input-group">
-                    <label>Data de Início</label>
+                    <label for="dataInicio">Data de Início</label>
                     <input type="date" id="dataInicio">
                 </div>
-                <div class="input-group">
-                    <label>Data de Término</label>
+                <div class="input-group full">
+                    <label for="dataTermino">Data de Término</label>
                     <input type="date" id="dataTermino">
                 </div>
             </div>
         </div>
 
-        <button class="btn btn-primary" id="btnGerar" onclick="gerarDinamico()">
+        <button type="button" class="btn btn-primary" id="btnGerar" onclick="gerarDinamico()">
             <span class="spinner" id="spinnerGerar"></span>
             <span id="btnGerarText">⬇ Gerar e Baixar Documento</span>
         </button>
@@ -291,12 +276,12 @@
             <p class="card-title">🔍 Busca</p>
             <div class="form-grid">
                 <div class="input-group">
-                    <label>Número de Patrimônio</label>
+                    <label for="searchPatrimonio">Número de Patrimônio</label>
                     <input type="text" id="searchPatrimonio" placeholder="Ex: JUR-001"
                         onkeydown="if(event.key==='Enter') buscarAparelho()">
                 </div>
                 <div style="display:flex; align-items:flex-end;">
-                    <button class="btn btn-secondary" onclick="buscarAparelho()">Buscar</button>
+                    <button type="button" class="btn btn-secondary" onclick="buscarAparelho()">Buscar</button>
                 </div>
             </div>
             <div id="resultadoDaBusca" class="result-box"></div>

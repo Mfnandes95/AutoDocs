@@ -1,10 +1,16 @@
 package com.example.demo.domain.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
-@Data
+@Getter
+@Setter
+@ToString
+@EqualsAndHashCode
 @NoArgsConstructor
 @Entity
 @Table(name = "usuarios")
@@ -20,6 +26,9 @@ public class UsuarioEntity {
     @Column(nullable = false, unique = true)
     private String email;
 
+    // CORREÇÃO: O hash da senha é explicitamente ocultado de logs e comparações
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @Column(nullable = false)
     private String senha;
 

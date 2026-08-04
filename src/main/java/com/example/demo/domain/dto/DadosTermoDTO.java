@@ -2,6 +2,7 @@ package com.example.demo.domain.dto;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 
 import com.example.demo.domain.model.DadosTermo;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -15,7 +16,8 @@ import lombok.NoArgsConstructor;
 public class DadosTermoDTO {
 
     private String id;
-
+    
+    // Padronização: se usou JsonProperty em um, use na nomenclatura de todos se estiver alterando o padrão camelCase
     @JsonProperty("nome_colaborador")
     private String nomeColaborador;
 
@@ -25,42 +27,53 @@ public class DadosTermoDTO {
     @JsonProperty("data_termino")
     private String dataTermino;
 
+    @JsonProperty("id_template")
     private String idTemplate;
+    
+    @JsonProperty("id_orgao")
     private String idOrgao;
 
-    @JsonProperty("patrimonio")   // ← adicionado
     private String patrimonio;
-
-    @JsonProperty("unidade")      // ← adicionado
     private String unidade;
-
-    @JsonProperty("tipo")         // ← adicionado
     private String tipo;
-
-    @JsonProperty("info")         // ← adicionado
     private String info;
 
+    /**
+     * Mapeia o DTO para o Model de forma null-safe e exception-safe.
+     * Idealmente, isso deveria estar em uma classe 'DadosTermoMapper'.
+     */
     public static DadosTermo toModel(DadosTermoDTO dto) {
-        DadosTermo model = new DadosTermo();
-        DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+        if (dto == null) {
+            return null;
+        }
 
+        DadosTermo model = new DadosTermo();
         model.setId(dto.getId());
         model.setNomeColaborador(dto.getNomeColaborador());
         model.setPatrimonio(dto.getPatrimonio());
         model.setUnidade(dto.getUnidade());
         model.setTipo(dto.getTipo());
         model.setInfo(dto.getInfo());
-
-        if (dto.getDataInicio() != null && !dto.getDataInicio().isEmpty()) {
-            model.setDataInicio(LocalDateTime.parse(dto.getDataInicio(), formatter));
-        }
-        if (dto.getDataTermino() != null && !dto.getDataTermino().isEmpty()) {
-            model.setDataTermino(LocalDateTime.parse(dto.getDataTermino(), formatter));
-        }
-
         model.setIdTemplate(dto.getIdTemplate());
         model.setIdOrgao(dto.getIdOrgao());
 
+        // Parse seguro das datas
+        model.setDataInicio(parseDataSegura(dto.getDataInicio()));
+        model.setDataTermino(parseDataSegura(dto.getDataTermino()));
+
         return model;
+    }
+
+    private static LocalDateTime parseDataSegura(String dataStr) {
+        if (dataStr == null || dataStr.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(dataStr, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (DateTimeParseException e) {
+            // Em vez de explodir um erro 500 para o usuário, retorna null 
+            // ou loga um warning. Depende da sua regra de negócio.
+            return null; 
+        }
     }
 }

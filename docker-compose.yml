@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:12
+    container_name: autodocs-db
+    environment:
+      POSTGRES_DB: autodocs
+      POSTGRES_USER: marcos
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - autodocs-net
+
+  app:
+    build: .
+    container_name: autodocs-app
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/autodocs
+      - DB_USER=marcos
+      - DB_PASS=admin
+      - DDL_AUTO=update
+    depends_on:
+      - postgres
+    networks:
+      - autodocs-net
+
+volumes:
+  pgdata:
+
+networks:
+  autodocs-net:
+    driver: bridge

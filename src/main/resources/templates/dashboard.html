@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoDocs — Dashboard de Equipamentos</title>
+    
+    <!-- Meta tags CSRF para requisições assíncronas (fetch/axios) -->
+    <meta name="_csrf" th:content="${_csrf?.token}" content="">
+    <meta name="_csrf_header" th:content="${_csrf?.headerName}" content="X-CSRF-TOKEN">
+
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -107,32 +112,10 @@
         .planilha-ativos tbody tr:hover { background-color: var(--card2); }
         .planilha-ativos td { padding: 12px 14px; font-size: 13px; color: var(--text); vertical-align: middle; }
 
-        .txt-mono-primary { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--primary); }
-        .txt-mono-muted { font-family: 'JetBrains Mono', monospace; color: var(--muted); }
-        
-        .badge-sit { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-        .sit-disponivel { background: rgba(0,255,136,0.1); color: var(--primary); }
-        .sit-manutencao { background: rgba(255,170,0,0.1); color: var(--warn); }
-        .sit-alocado { background: rgba(0,187,255,0.1); color: var(--info); }
-
-        .btn-table-action { background: none; border: none; cursor: pointer; font-size: 13px; padding: 4px; margin-left: 6px; border-radius: 4px; transition: all 0.2s; }
-        .btn-table-action:hover { background: var(--border); }
-
         /* ── GRID UNIDADES ── */
         .section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
         .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
         #dashboard { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-
-        /* ── CARD PRÉDIO ── */
-        .predio-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: all 0.2s; }
-        .predio-card:hover { border-color: rgba(0,255,136,0.3); transform: translateY(-2px); }
-        .predio-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--card2); }
-        .predio-nome { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
-        .predio-badge { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; background: rgba(0,255,136,0.1); color: var(--primary); border: 1px solid rgba(0,255,136,0.2); border-radius: 20px; padding: 2px 8px; }
-        .predio-body { padding: 14px 18px; }
-        .equip-list { display: flex; flex-direction: column; gap: 8px; }
-        .equip-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
-        .equip-patrimonio { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--primary); }
 
         /* ── MODAL DIALOG (CADASTRO) ── */
         .modal-overlay {
@@ -179,14 +162,14 @@
                 <span class="search-icon">🔍</span>
                 <input type="text" id="filtroPredio" placeholder="Filtrar por prédio...">
             </div>
-            <button class="btn btn-primary" onclick="filtrarPredio()">Filtrar</button>
-            <button class="btn btn-secondary" id="btnAtualizar" onclick="carregarDados()">⟳ Atualizar</button>
+            <button type="button" class="btn btn-primary" onclick="filtrarPredio()">Filtrar</button>
+            <button id="btnAtualizar" onclick="atualizarDashboard()">Atualizar</button>
         </div>
     </header>
 
     <nav class="nav-tabs">
-        <button class="tab-link active" onclick="switchTab('tab-distribuicao')">📍 Distribuição por Unidade</button>
-        <button class="tab-link" onclick="switchTab('tab-inventario')">📦 Planilha de Inventário</button>
+        <button type="button" class="tab-link active" onclick="switchTab('tab-distribuicao', event)">📍 Distribuição por Unidade</button>
+        <button type="button" class="tab-link" onclick="switchTab('tab-inventario', event)">📦 Planilha de Inventário</button>
     </nav>
 
     <div class="quick-stats">
@@ -206,7 +189,7 @@
         <div class="secao-inventario">
             <div class="inventario-header">
                 <h3>Inventário de Ativos da TI</h3>
-                <button id="btn-novo-item" class="btn btn-primary" style="display: none;" onclick="abrirModalCadastro()">+ Cadastrar Item</button>
+                <button type="button" id="btn-novo-item" class="btn btn-primary" style="display: none;" onclick="abrirModalCadastro()">+ Cadastrar Item</button>
             </div>
 
             <div class="sub-secao-titulo">💻 Notebooks Dell</div>
@@ -265,7 +248,7 @@
 <script src="/js/inventario.js"></script>
 <script>
     // Gerenciador de Abas interno do HTML
-    function switchTab(tabId) {
+    function switchTab(tabId, event) {
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         document.querySelectorAll('.tab-link').forEach(l => l.classList.remove('active'));
         

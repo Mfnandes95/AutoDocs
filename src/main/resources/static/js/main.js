@@ -1,138 +1,124 @@
-// ── NAVEGAÇÃO ──
-function show(id, el) {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    document.querySelectorAll('nav li').forEach(li => li.classList.remove('active'));
-    if (el) el.classList.add('active');
-    if (id === 'dashboard') atualizarDashboard();
+/**
+ * main.js - Corrigido para leitura de CSRF via Meta Tag e Download de Arquivo (Blob)
+ */
+
+// Captura o Token CSRF diretamente das Meta Tags injetadas pelo Thymeleaf
+function getCsrfToken() {
+    const metaToken = document.querySelector("meta[name='_csrf']")?.getAttribute("content");
+    if (metaToken && metaToken !== "") return metaToken;
+
+    // Fallback: Tenta obter do Cookie
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; XSRF-TOKEN=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+
+    return '';
 }
 
-// ── TOAST ──
+function getCsrfHeader() {
+    return document.querySelector("meta[name='_csrf_header']")?.getAttribute("content") || 'X-XSRF-TOKEN';
+}
+
 function toast(msg, tipo = 'ok') {
     const t = document.getElementById('toast');
-    t.className = `toast ${tipo}`;
+    if (!t) {
+        alert(msg);
+        return;
+    }
+    t.className = `toast ${tipo} show`;
     t.innerHTML = (tipo === 'ok' ? '✅' : '❌') + ' ' + msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 3500);
+    setTimeout(() => t.className = t.className.replace('show', ''), 3500);
 }
 
-// ── SPINNER ──
-function setLoading(on) {
-    const btn = document.getElementById('btnGerar');
-    const sp  = document.getElementById('spinnerGerar');
-    const tx  = document.getElementById('btnGerarText');
-    btn.disabled       = on;
-    sp.style.display   = on ? 'block' : 'none';
-    tx.textContent     = on ? 'Processando...' : '⬇ Gerar e Baixar Documento';
-}
-
-// ── GERAR DOCUMENTO ──
+// Geração Dinâmica de Documentos (POST com FormData, CSRF e Download Automático)
 async function gerarDinamico() {
     const fileInput = document.getElementById('fileInput');
-    const file = fileInput.files[0];
+    const file = fileInput?.files[0];
    
     if (!file) return toast('Selecione o arquivo .docx', 'error');
 
-    // Coleta os dados do formulário
-    const dadosObjeto = {
-        nome_colaborador: document.getElementById('nome').value,
-        patrimonio: document.getElementById('patrimonioInput').value,
-        unidade: document.getElementById('unidade').value,
-        info: document.getElementById('info').value,
-        tipo: document.getElementById('tipo').value,
-        data_inicio: document.getElementById('dataInicio').value,
-        data_termino: document.getElementById('dataTermino').value
+    const dados = {
+        nomeColaborador: document.getElementById('nome')?.value || "",
+        patrimonio: document.getElementById('patrimonioInput')?.value || "0000",
+        unidade: document.getElementById('unidade')?.value || "",
+        tipo: document.getElementById('tipo')?.value || "",
+        info: document.getElementById('info')?.value || "",
+        dataInicio: document.getElementById('dataInicio')?.value || "",
+        dataTermino: document.getElementById('dataTermino')?.value || ""
     };
 
+    if (!dados.dataInicio || !dados.dataTermino) {
+        return toast('As datas de início e término são obrigatórias!', 'error');
+    }
+
+    const btn = document.getElementById('btnGerar');
+    const spinner = document.getElementById('spinnerGerar');
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.style.display = 'inline-block';
+
     const formData = new FormData();
-    // A chave "file" deve ser idêntica ao @RequestPart("file") no Java
     formData.append('file', file);
-   
-    // A chave "dados" deve ser idêntica ao @RequestPart("dados") no Java
-    // Criamos um Blob com o tipo application/json para o Spring não se perder
-    const jsonBlob = new Blob([JSON.stringify(dadosObjeto)], { type: 'application/json' });
-    formData.append('dados', jsonBlob);
+    formData.append('dados', new Blob([JSON.stringify(dados)], { type: "application/json" }));
 
     try {
-        // IMPORTANTE: Use a barra "/" no início para a URL ser absoluta (localhost:8080/docs/...)
-        const response = await fetch('/docs/gerar-dinamico', {
-            method: 'POST',
-            body: formData
-            // DICA: NÃO coloque Headers de Content-Type aqui. O browser faz isso sozinho para Multipart.
+        const token = getCsrfToken();
+        const headerName = getCsrfHeader();
+
+        const headers = {};
+        if (token) {
+            headers[headerName] = token;
+        }
+
+        const response = await fetch('/api/docs/gerar-dinamico', { 
+            method: 'POST', 
+            headers: headers,
+            body: formData 
         });
 
-        if (response.ok) {
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            // Define o nome do arquivo baseado no colaborador
-            const nomeLimpo = dadosObjeto.nome_colaborador.replace(/\s+/g, '_');
-            a.download = `Termo_${nomeLimpo}.docx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            toast('Documento gerado com sucesso!');
-        } else if (response.status === 404) {
-            toast('Erro 404: Endpoint não encontrado. Verifique se o Controller está ativo.', 'error');
-        } else {
-            toast('Erro no servidor ao gerar documento.', 'error');
+        // Trata respostas de erro (403, 400, 500)
+        if (!response.ok) {
+            let errorMsg = `Erro (${response.status}): `;
+            try {
+                const errJson = await response.json();
+                errorMsg += errJson.mensagem || errJson.message || 'Falha na requisição';
+            } catch (e) {
+                errorMsg += 'Acesso negado ou permissão insuficiente.';
+            }
+            throw new Error(errorMsg);
         }
+
+        // O backend retorna um binário (.docx). Faz o download via Blob
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'Termo_Gerado.docx';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+
+        toast('Documento gerado e baixado com sucesso!', 'ok');
+    } catch (error) {
+        console.error("Erro na geração:", error);
+        toast(error.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+        if (spinner) spinner.style.display = 'none';
+    }
+}
+
+// Listagem de Termos
+async function buscarTermos() {
+    try {
+        const response = await fetch('/api/docs/listar-todos');
+        const result = await response.json();
+        
+        if (!result.sucesso) throw new Error(result.mensagem);
+        return result.dados;
     } catch (e) {
-        toast('Erro de conexão com o servidor.', 'error');
-        console.error(e);
-    }
-}
-
-// ── BUSCAR APARELHO ──
-async function buscarAparelho() {
-    const patrimonio = document.getElementById('searchPatrimonio').value.trim();
-    const div        = document.getElementById('resultadoDaBusca');
-
-    if (!patrimonio) return toast('Digite um número de patrimônio.', 'err');
-
-    div.className = 'result-box visible';
-    div.innerHTML = '<span style="color:var(--muted);font-size:13px;">Buscando...</span>';
-
-    try {
-        const lista = await (await fetch('/docs/listar-todos')).json();
-        const item  = lista.find(t => t.patrimonio === patrimonio);
-
-        if (item) {
-            div.className = 'result-box visible ok';
-            div.innerHTML = `
-                <div class="result-row"><span>Colaborador</span><span>${item.nomeColaborador ?? '—'}</span></div>
-                <div class="result-row"><span>Unidade</span><span>${item.unidade ?? '—'}</span></div>
-                <div class="result-row"><span>Tipo</span><span>${item.tipo ?? '—'}</span></div>
-                <div class="result-row"><span>Equipamento</span><span>${item.info ?? '—'}</span></div>
-                <div class="result-row"><span>Status</span><span>${item.statusAparelho ?? '—'}</span></div>`;
-        } else {
-            div.className = 'result-box visible err';
-            div.innerHTML = `<span style="color:var(--danger);font-size:13px;">Patrimônio "${patrimonio}" não encontrado.</span>`;
-        }
-    } catch {
-        div.className = 'result-box visible err';
-        div.innerHTML = `<span style="color:var(--danger);font-size:13px;">Erro ao conectar com o servidor.</span>`;
-    }
-}
-
-// ── DASHBOARD ──
-async function atualizarDashboard() {
-    const ids = ['countSede','countSantana','countOiapoque','countLaranjal','countTartarugalzinho','countPortoGrande','countTotal','countAvaria'];
-    ids.forEach(id => document.getElementById(id).innerText = '...');
-
-    try {
-        const lista = await (await fetch('/docs/listar-todos')).json();
-
-        document.getElementById('countSede').innerText             = lista.filter(t => t.unidade === 'Macapá').length;
-        document.getElementById('countSantana').innerText          = lista.filter(t => t.unidade === 'Escritório de Santana').length;
-        document.getElementById('countOiapoque').innerText         = lista.filter(t => t.unidade === 'Escritório de Oiapoque').length;
-        document.getElementById('countLaranjal').innerText         = lista.filter(t => t.unidade === 'Escritório de Laranjal do Jari').length;
-        document.getElementById('countTartarugalzinho').innerText  = lista.filter(t => t.unidade === 'Escritório de Tartarugalzinho').length;
-        document.getElementById('countPortoGrande').innerText      = lista.filter(t => t.unidade === 'Escritório de Porto Grande').length;
-        document.getElementById('countTotal').innerText            = lista.length;
-        document.getElementById('countAvaria').innerText           = lista.filter(t => t.statusAparelho === 'AVARIADO').length;
-    } catch {
-        ids.forEach(id => document.getElementById(id).innerText = '—');
+        toast('Erro ao buscar lista: ' + e.message, 'error');
+        return [];
     }
 }

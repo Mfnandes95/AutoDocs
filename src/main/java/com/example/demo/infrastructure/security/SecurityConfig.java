@@ -8,14 +8,16 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -32,61 +34,37 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        CsrfTokenRequestAttributeHandler requestHandler = new CsrfTokenRequestAttributeHandler();
+        requestHandler.setCsrfRequestAttributeName("_csrf");
+
         http
-            // 1. Ativa a configuração do CORS Source no filtro do Spring Security
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                .csrfTokenRequestHandler(requestHandler)
             )
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers(
-                    "/login.html", "/register.html",
-                    "/login", "/register",
-                    "/js/**", "/css/**", "/images/**",
-                    "/*.js", "/*.css",
-                    "/error"
-                ).permitAll()
-                // Garante que apenas usuários com autoridade literal GESTOR acessem o painel
-                .requestMatchers("/dashboard.html", "/dashboard/**").hasAuthority("GESTOR")
+                .requestMatchers("/favicon.ico", "/css/**", "/js/**", "/images/**", "/webjars/**").permitAll()
+                .requestMatchers("/login.html", "/register.html", "/api/usuarios/cadastrar").permitAll()
                 .anyRequest().authenticated()
             )
-            .authenticationProvider(authenticationProvider())
             .formLogin(form -> form
                 .loginPage("/login.html")
                 .loginProcessingUrl("/login")
                 .usernameParameter("email")
                 .passwordParameter("senha")
-                // Redireciona para o dashboard correto após autenticação bem-sucedida
-                .defaultSuccessUrl("/dashboard.html", true)
-                .failureUrl("/login.html?error=true")
-                .permitAll()
-            )
-            .logout(logout -> logout
-                .logoutUrl("/logout")
-                .logoutSuccessUrl("/login.html?logout")
-                .invalidateHttpSession(true)
-                .deleteCookies("JSESSIONID")
+                .defaultSuccessUrl("/index.html", true)
                 .permitAll()
             );
-
         return http.build();
     }
 
-    // 2. Declaração do Bean explicitamente dentro da classe SecurityConfig
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        
-        configuration.setAllowedOriginPatterns(Arrays.asList(
-            "http://localhost:5173",
-            "https://localhost:5173",
-            "https://*.up.railway.app",
-            "https://*.vercel.app"
-        ));
-        
+        configuration.setAllowedOriginPatterns(List.of("http://localhost:5173", "http://localhost:8080"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Cache-Control"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Cache-Control", "X-XSRF-TOKEN", "X-CSRF-TOKEN"));
         configuration.setAllowCredentials(true);
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

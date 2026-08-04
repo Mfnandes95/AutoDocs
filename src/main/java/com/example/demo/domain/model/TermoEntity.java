@@ -1,23 +1,20 @@
 package com.example.demo.domain.model;
 
-import jakarta.persistence.Entity;
-
+import jakarta.persistence.*;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-
+@Data
+@NoArgsConstructor
 @Entity
 public class TermoEntity {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id")
     private Long id;
 
-    @Column(name = "prédio")
+    @Column(name = "predio") // ← sem acento
     private String predio;
 
     @Column(name = "nome_colaborador")
@@ -25,13 +22,13 @@ public class TermoEntity {
 
     @Column(nullable = false)
     private String info;
-    
+
     @Column(nullable = false)
     private String tipo;
 
-    @Column(nullable = false)
+    @Column(nullable = false) // ← alinhado com o banco
     private LocalDateTime dataInicio;
-    
+
     @Column(nullable = false)
     private LocalDateTime dataTermino;
 
@@ -53,6 +50,7 @@ public class TermoEntity {
     @Column(name = "status_aparelho")
     private String statusAparelho;
 
+  
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getPredio() { return predio; }
@@ -80,8 +78,8 @@ public class TermoEntity {
     public String getStatusAparelho(){ return statusAparelho;}
     public void setStatusAparelho(String statusAparelho){this.statusAparelho = statusAparelho;}
 
-@jakarta.persistence.PrePersist
-protected void onCreate() {
-    this.dataCriacao = LocalDateTime.now();
+  @PrePersist
+    protected void onCreate() {
+        this.dataCriacao = LocalDateTime.now();
     }
 }

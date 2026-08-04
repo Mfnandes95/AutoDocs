@@ -1,270 +1,179 @@
-// ── ESTADO GLOBAL ──
+// Estado global controlado
 let todosOsTermos = [];
 
-// ── INICIALIZAÇÃO ──
+// Gatilho executado automaticamente ao carregar a página
 document.addEventListener('DOMContentLoaded', () => {
-    // Captura a role definida no login para controle de visualização
-    const role = localStorage.getItem("user_role");
-
-    if (!role) {
-        window.location.href = '/login.html';
-        return;
-    }
-    
-    // Se for do perfil RECEPCAO, o escopo deste script é travado visualmente
-    if (role === 'RECEPCAO') {
-        document.getElementById('dashboard').innerHTML = `
-            <div class="empty-state">
-                <span style="font-size:2rem">🚫</span>
-                <p style="margin-top:8px;color:var(--danger);font-weight:700;">Acesso Não Autorizado</p>
-                <p>Seu perfil está autorizado apenas para a emissão e geração de novos termos.</p>
-            </div>`;
-        document.getElementById('loading').style.display = 'none';
-        return; 
-    }
-
-    // Mantém o escopo de execução original para GESTOR ou TECNICO
-    carregarDados();
-    document.getElementById('filtroPredio').addEventListener('input', filtrarPredio);
+    atualizarDashboard();
 });
 
-// ── TOAST ──
-function toast(msg, tipo = 'ok') {
-    const t = document.getElementById('toast');
-    t.className = `toast ${tipo}`;
-    t.innerHTML = (tipo === 'ok' ? '✅' : '❌') + ' ' + msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 3500);
-}
-
-// ── CARREGAR DADOS ──
-async function carregarDados() {
+async function atualizarDashboard() {
     const btn = document.getElementById('btnAtualizar');
-    btn.classList.add('loading');
-    btn.textContent = '⟳ Atualizando...';
-
-    document.getElementById('loading').style.display = 'flex';
-    document.getElementById('dashboard').innerHTML = '';
-
-    try {
-        const res = await fetch('/docs/listar-todos', {
-            method: 'GET',
-            credentials: 'same-origin',
-            headers: { 'Accept': 'application/json' }
-        });
-
-        if (res.redirected && res.url.includes('login')) {
-            window.location.href = '/login.html';
-            return;
-        }
-
-        if (res.status === 401 || res.status === 403) {
-            window.location.href = '/login.html';
-            return;
-        }
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const raw = await res.text();
-        console.log('[DASHBOARD] Resposta bruta:', raw);
-
-        let lista = JSON.parse(raw);
-        if (!Array.isArray(lista)) throw new Error('Formato inesperado.');
-
-        console.log(`[DASHBOARD] ${lista.length} registro(s) recebido(s).`);
-        if (lista.length > 0) console.log('[DASHBOARD] Exemplo de registro:', lista[0]);
-
-        todosOsTermos = lista;
-        atualizarStats(lista);
-        renderizarDashboard(lista);
-
-        if (lista.length === 0) {
-            toast('Nenhum registro encontrado no banco.', 'err');
-        } else {
-            toast(`${lista.length} equipamento(s) carregado(s).`);
-        }
-
-    } catch (e) {
-        console.error('[DASHBOARD] Erro:', e);
-        document.getElementById('dashboard').innerHTML = `
-            <div class="empty-state">
-                <span style="font-size:2rem">⚠️</span>
-                <p style="margin-top:8px;color:var(--danger);font-weight:700;">${e.message}</p>
-                <p style="margin-top:4px;">Verifique o console para mais detalhes.</p>
-            </div>`;
-        toast('Erro ao carregar dados.', 'err');
-    } finally {
-        document.getElementById('loading').style.display = 'none';
-        btn.classList.remove('loading');
-        btn.textContent = '⟳ Atualizar';
-    }
-}
-
-// ── STATS ──
-function atualizarStats(lista) {
-    const unidades  = new Set(lista.map(t => t.unidade).filter(Boolean));
-    const ativos    = lista.filter(t => normalizar(t.statusAparelho) === 'ativo').length;
-    const avariados = lista.filter(t => normalizar(t.statusAparelho) === 'avariado').length;
-
-    document.getElementById('statTotal').textContent     = lista.length;
-    document.getElementById('statUnidades').textContent  = unidades.size;
-    document.getElementById('statAtivos').textContent    = ativos;
-    document.getElementById('statAvariados').textContent = avariados;
-}
-
-// ── FILTRO ──
-function filtrarPredio() {
-    const termo = document.getElementById('filtroPredio').value.trim().toLowerCase();
-    const filtrados = todosOsTermos.filter(t =>
-        !termo || t.unidade?.toLowerCase().includes(termo)
-    );
-    atualizarStats(filtrados);
-    renderizarDashboard(filtrados);
-}
-
-// ── RENDERIZAR DASHBOARD ──
-function renderizarDashboard(lista) {
     const container = document.getElementById('dashboard');
-    container.innerHTML = '';
-
-    if (!lista || lista.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <span style="font-size:2rem">📭</span>
-                <p>Nenhum equipamento encontrado.</p>
-            </div>`;
-        return;
-    }
-
-    const porUnidade = lista.reduce((acc, t) => {
-        const u = t.unidade || 'Sem unidade';
-        if (!acc[u]) acc[u] = [];
-        acc[u].push(t);
-        return acc;
-    }, {});
-
-    Object.keys(porUnidade)
-        .sort()
-        .forEach(u => container.appendChild(criarCardUnidade(u, porUnidade[u])));
-}
-
-// ── CARD DE UNIDADE ──
-function criarCardUnidade(unidade, itens) {
-    const card = document.createElement('div');
-    card.className = 'predio-card';
-
-    const avariados = itens.filter(t => normalizar(t.statusAparelho) === 'avariado').length;
-    const alertaBadge = avariados > 0
-        ? `<span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
-                background:rgba(255,68,85,0.1);color:#ff4455;border:1px solid rgba(255,68,85,0.2);
-                border-radius:20px;padding:3px 8px;">⚠ ${avariados} avaria(s)</span>`
-        : '';
-
-    card.innerHTML = `
-        <div class="predio-header">
-            <div class="predio-nome">
-                <span class="ic">🏢</span>
-                <span>${unidade}</span>
-            </div>
-            <div style="display:flex;gap:8px;align-items:center;">
-                ${alertaBadge}
-                <span class="predio-badge">${itens.length} item(s)</span>
-            </div>
-        </div>
-        <div class="predio-body">
-            <div class="equip-list">
-                ${itens.map(criarItemEquipamento).join('')}
-            </div>
-        </div>`;
-
-    return card;
-}
-
-// ── ITEM DE EQUIPAMENTO ──
-function criarItemEquipamento(t) {
-    const status      = t.statusAparelho ?? 'Desconhecido';
-    const statusNorm  = normalizar(status);
-    const role        = localStorage.getItem("user_role");
-
-    const statusClass = statusNorm === 'ativo'
-        ? 'status-ativo'
-        : statusNorm === 'avariado'
-            ? 'status-avariado'
-            : 'status-outro';
-
-    // Determina a ação baseada no status e na Role do usuário conectado
-    let acaoBotao = '';
     
-    if (statusNorm === 'devolvido') {
-        acaoBotao = `<span style="font-size:11px;color:var(--muted);font-style:italic;">Devolvido ✓</span>`;
-    } else {
-        // Apenas GESTOR ou TECNICO visualizam e interagem com o botão de alteração de status
-        if (role === 'GESTOR' || role === 'TECNICO') {
-            acaoBotao = `<button
-                    onclick="marcarDevolvido(${t.id})"
-                    style="background:rgba(0,187,255,0.1);color:#00bbff;border:1px solid rgba(0,187,255,0.25);
-                           border-radius:6px;padding:4px 10px;font-size:10px;font-family:'Syne',sans-serif;
-                           font-weight:700;cursor:pointer;transition:all 0.2s;"
-                    onmouseover="this.style.background='rgba(0,187,255,0.2)'"
-                    onmouseout="this.style.background='rgba(0,187,255,0.1)'">
-                ↩ Devolver
-              </button>`;
-        } else {
-            acaoBotao = `<span style="font-size:11px;color:var(--muted);font-style:italic;">Apenas Leitura</span>`;
-        }
-    }
-
-    return `
-        <div class="equip-item" id="equip-${t.id}">
-            <div class="equip-info">
-                <span class="equip-patrimonio">${t.patrimonio ?? '—'}</span>
-                <span class="equip-nome">${t.nomeColaborador ?? '—'}</span>
-                <span class="equip-tipo">${t.info ?? '—'} · ${t.tipo ?? '—'}</span>
-                <span class="equip-tipo">${formatarData(t.dataInicio)} → ${formatarData(t.dataTermino)}</span>
-            </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-                <span class="equip-status ${statusClass}">${status}</span>
-                ${acaoBotao}
-            </div>
-        </div>`;
-}
-
-// ── MARCAR COMO DEVOLVIDO ──
-async function marcarDevolvido(id) {
-    if (!confirm('Confirmar devolução deste equipamento?')) return;
+    if (btn) btn.disabled = true;
+    if (container) container.style.opacity = '0.5';
 
     try {
-        const res = await fetch(`/docs/${id}/status?status=DEVOLVIDO`, {
-            method: 'PATCH',
+        const response = await fetch('/api/docs/listar-todos', {
+            method: 'GET',
             credentials: 'same-origin'
         });
 
-        if (res.ok) {
-            toast('Equipamento marcado como devolvido!');
-            await carregarDados();
+        if (!response.ok) {
+            throw new Error(`Erro no servidor: HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (!result.sucesso) {
+            throw new Error(result.mensagem || "Falha ao obter dados");
+        }
+
+        todosOsTermos = result.dados || [];
+
+        renderizarStats(todosOsTermos);
+        renderizarLista(todosOsTermos);
+
+    } catch (e) {
+        console.error("Erro na sincronização:", e);
+        mostrarToast("Erro ao sincronizar com motor: " + e.message, 'err');
+    } finally {
+        if (btn) btn.disabled = false;
+        if (container) container.style.opacity = '1';
+
+        const loadingElement = document.getElementById('loading') || document.querySelector('.loading-spinner');
+        if (loadingElement) {
+            loadingElement.style.display = 'none';
+        }
+    }
+}
+
+function renderizarStats(lista) {
+    if (!lista) lista = [];
+
+    // 1. Total de Ativos registrados
+    const total = lista.length;
+
+    // 2. Unidades únicas
+    const unidadesUnicas = new Set(
+        lista
+            .map(i => i.unidade || i.nome_unidade || i.nomeUnidade)
+            .filter(Boolean)
+    ).size;
+
+    // 3. Quantidade de Avariados
+    const avariados = lista.filter(i => {
+        const st = (i.tipo || i.info || i.status || i.status_aparelho || '').toUpperCase();
+        return st.includes('AVARIADO');
+    }).length;
+
+    // 4. Ativos operacionais (Total menos os avariados)
+    const ativosOperacionais = total - avariados;
+
+    // Atualiza os 4 cards do topo apontando para os IDs corretos do HTML
+    const elTotal = document.getElementById('statTotal');
+    if (elTotal) elTotal.innerText = total;
+
+    const elUnidades = document.getElementById('statUnidades');
+    if (elUnidades) elUnidades.innerText = unidadesUnicas;
+
+    const elAtivos = document.getElementById('statAtivos');
+    if (elAtivos) elAtivos.innerText = ativosOperacionais;
+
+    const elAvariados = document.getElementById('statAvariados');
+    if (elAvariados) elAvariados.innerText = avariados;
+}
+
+function renderizarLista(lista) {
+    const container = document.getElementById('dashboard');
+    if (!container) return;
+    
+    container.innerHTML = '';
+
+    if (!lista || lista.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: var(--muted, #888); padding: 20px;">Nenhum documento encontrado.</p>';
+        return;
+    }
+
+    lista.forEach(item => {
+        // 1. Patrimônio
+        const patrimonio = item.patrimonio || item.codigo_patrimonio || 'SEM PATRIMÔNIO';
+        
+        // 2. Colaborador
+        const colaborador = item.nome_colaborador 
+            || item.nomeColaborador 
+            || item.colaborador 
+            || 'Sem Colaborador';
+            
+        // 3. Unidade
+        const unidade = item.unidade || 'N/A';
+            
+        // 4. Status / Tipo / Info
+        let status = item.tipo || item.status || item.info || 'Indefinido';
+        if (item.tipo && item.info) {
+            status = `${item.tipo} (${item.info})`;
+        }
+
+        const div = document.createElement('div');
+        div.className = 'card-item';
+        div.innerHTML = `
+            <div>
+                <strong>${patrimonio}</strong> - ${colaborador}
+                <br><small>${unidade} | ${status}</small>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+// Marcar Devolvido (PATCH com CSRF Token)
+async function marcarDevolvido(id) {
+    try {
+        const response = await fetch(`/api/docs/${id}/status?status=DEVOLVIDO`, { 
+            method: 'PATCH',
+            headers: {
+                'X-XSRF-TOKEN': getCookie('XSRF-TOKEN')
+            },
+            credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.sucesso) {
+            atualizarDashboard();
         } else {
-            toast(`Erro ${res.status} ao atualizar status.`, 'err');
+            mostrarToast(result.mensagem || "Erro ao atualizar status", 'err');
         }
     } catch (e) {
-        toast('Erro de conexão.', 'err');
+        mostrarToast("Erro de comunicação com motor", 'err');
     }
 }
 
-// ── HELPERS ──
-function normalizar(str) {
-    if (!str) return '';
-    return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+// Funções utilitárias auxiliares
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return '';
 }
 
-function formatarData(data) {
-    if (!data) return '—';
-    try {
-        if (Array.isArray(data)) {
-            const [ano, mes, dia] = data;
-            return `${String(dia).padStart(2,'0')}/${String(mes).padStart(2,'0')}/${ano}`;
-        }
-        return new Date(data).toLocaleDateString('pt-BR');
-    } catch {
-        return String(data);
+function mostrarToast(msg, tipo = 'ok') {
+    if (typeof window.toast === 'function') {
+        window.toast(msg, tipo);
+        return;
     }
+    const toastEl = document.getElementById("toast");
+    if (!toastEl) return;
+    toastEl.textContent = msg;
+    toastEl.className = `toast show ${tipo}`;
+    setTimeout(() => { toastEl.className = "toast"; }, 3000);
 }
+
+// Exportação global de funções
+window.carregarDados = atualizarDashboard;
+window.atualizarDashboard = atualizarDashboard;
+window.marcarDevolvido = marcarDevolvido;

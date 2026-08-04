@@ -1,0 +1,14 @@
+{
+  "ollama": {
+    "url": "http://localhost:11434",
+    "defaultModel": "deepseek-coder:1.3b"
+  },
+  "models": {
+    "path": "/home/marcos/.loclaude/models"
+  },
+  "docker": {
+    "composeFile": "./docker-compose.yml",
+    "gpu": true
+  }
+}
+

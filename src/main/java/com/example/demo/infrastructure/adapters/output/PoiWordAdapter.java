@@ -41,4 +41,25 @@ public class PoiWordAdapter implements DocsGerar {
             throw new RuntimeException("Falha ao gerar arquivo: " + e.getMessage());
         }
     }
+
+    @Override
+    public byte[] gerar(DadosTermo dados, java.io.InputStream templateStream) {
+        Map<String, Object> model = new HashMap<>();
+        model.put("nomeColaborador", dados.getNomeColaborador());
+        model.put("info", dados.getInfo());
+        model.put("tipo", dados.getTipo());
+        model.put("dataInicio", dados.getDataInicio());
+
+        try {
+            try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                XWPFTemplate template = XWPFTemplate.compile(templateStream).render(model);
+                template.write(out);
+                return out.toByteArray();
+            }
+        } catch (Exception e) {
+            System.err.println("ERRO CRÍTICO NO ADAPTER: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Falha ao gerar arquivo: " + e.getMessage());
+        }
+    }
 }
