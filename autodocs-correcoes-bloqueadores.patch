@@ -1,0 +1,236 @@
+diff --git a/For b/For
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/Get b/Get
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/Run b/Run
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/Task b/Task
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/src/main/java/com/example/demo/application/EquipamentoController.java b/src/main/java/com/example/demo/application/EquipamentoController.java
+index 299adcb..2c4af3d 100644
+--- a/src/main/java/com/example/demo/application/EquipamentoController.java
++++ b/src/main/java/com/example/demo/application/EquipamentoController.java
+@@ -1,5 +1,6 @@
+ package com.example.demo.application;
+ 
++import com.example.demo.application.util.SanitizerUtils;
+ import com.example.demo.domain.model.Equipamento;
+ import com.example.demo.infrastructure.repository.EquipamentoRepository;
+ import org.springframework.http.ResponseEntity;
+@@ -9,8 +10,9 @@ import java.util.List;
+ 
+ @RestController
+ @RequestMapping("/equipamentos")
+-@CrossOrigin(origins = "*")
+ public class EquipamentoController {
++    // Correção InfoSec: @CrossOrigin("*") removido — a origem já é controlada
++    // centralmente pelo CorsConfigurationSource em SecurityConfig.
+ 
+     private final EquipamentoRepository equipamentoRepository;
+ 
+@@ -39,6 +41,14 @@ public class EquipamentoController {
+         if (equipamento.getStatus() == null || equipamento.getStatus().isBlank()) {
+             equipamento.setStatus("ATIVO");
+         }
++
++        // Correção InfoSec (XSS armazenado): sanitiza todo campo de texto livre
++        // antes de persistir, já que o frontend injeta esses valores via innerHTML.
++        equipamento.setNome(SanitizerUtils.sanitizar(equipamento.getNome()));
++        equipamento.setTipo(SanitizerUtils.sanitizar(equipamento.getTipo()));
++        equipamento.setStatus(SanitizerUtils.sanitizar(equipamento.getStatus()));
++        equipamento.setPatrimonio(SanitizerUtils.sanitizar(equipamento.getPatrimonio()));
++
+         return ResponseEntity.ok(equipamentoRepository.save(equipamento));
+     }
+ 
+@@ -49,10 +59,10 @@ public class EquipamentoController {
+ 
+         return equipamentoRepository.findById(id)
+                 .map(eq -> {
+-                    if (dados.getNome()        != null && !dados.getNome().isBlank())        eq.setNome(dados.getNome());
+-                    if (dados.getTipo()        != null && !dados.getTipo().isBlank())        eq.setTipo(dados.getTipo());
+-                    if (dados.getStatus()      != null && !dados.getStatus().isBlank())      eq.setStatus(dados.getStatus());
+-                    if (dados.getPatrimonio()  != null && !dados.getPatrimonio().isBlank())  eq.setPatrimonio(dados.getPatrimonio());
++                    if (dados.getNome()        != null && !dados.getNome().isBlank())        eq.setNome(SanitizerUtils.sanitizar(dados.getNome()));
++                    if (dados.getTipo()        != null && !dados.getTipo().isBlank())        eq.setTipo(SanitizerUtils.sanitizar(dados.getTipo()));
++                    if (dados.getStatus()      != null && !dados.getStatus().isBlank())      eq.setStatus(SanitizerUtils.sanitizar(dados.getStatus()));
++                    if (dados.getPatrimonio()  != null && !dados.getPatrimonio().isBlank())  eq.setPatrimonio(SanitizerUtils.sanitizar(dados.getPatrimonio()));
+                     return ResponseEntity.ok(equipamentoRepository.save(eq));
+                 })
+                 .orElse(ResponseEntity.notFound().build());
+diff --git a/src/main/java/com/example/demo/application/LoginController.java b/src/main/java/com/example/demo/application/LoginController.java
+deleted file mode 100644
+index 63e5b6f..0000000
+--- a/src/main/java/com/example/demo/application/LoginController.java
++++ /dev/null
+@@ -1,14 +0,0 @@
+-package com.example.demo.application;
+-
+-import org.springframework.stereotype.Controller;
+-import org.springframework.web.bind.annotation.GetMapping;
+-
+-@Controller
+-public class LoginController {
+-
+-    @GetMapping("/")
+-    public String index() {
+-        // Redireciona para o arquivo index.html na pasta static
+-        return "forward:/index.html";
+-    }
+-}
+\ No newline at end of file
+diff --git a/src/main/java/com/example/demo/infrastructure/exception/GlobalExceptionHandler.java b/src/main/java/com/example/demo/infrastructure/exception/GlobalExceptionHandler.java
+index 21ed3f4..30463dd 100644
+--- a/src/main/java/com/example/demo/infrastructure/exception/GlobalExceptionHandler.java
++++ b/src/main/java/com/example/demo/infrastructure/exception/GlobalExceptionHandler.java
+@@ -1,5 +1,7 @@
+ package com.example.demo.infrastructure.exception;
+ 
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.ExceptionHandler;
+@@ -11,13 +13,18 @@ import java.util.Map;
+ @RestControllerAdvice
+ public class GlobalExceptionHandler {
+ 
++    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
++
+     // Captura qualquer erro inesperado
+     @ExceptionHandler(Exception.class)
+     public ResponseEntity<Map<String, String>> handleAllExceptions(Exception e) {
++        // Correção InfoSec (Information Disclosure): a mensagem/stack trace da
++        // exceção nunca vai para o cliente — fica só no log do servidor.
++        logger.error("Erro não tratado capturado pelo GlobalExceptionHandler", e);
++
+         Map<String, String> response = new HashMap<>();
+-        response.put("erro", "Ocorreu um problema no servidor");
+-        response.put("detalhe", e.getMessage());
+-        
++        response.put("erro", "Ocorreu um problema no servidor. Tente novamente mais tarde.");
++
+         return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+     }
+ }
+\ No newline at end of file
+diff --git a/src/main/java/com/example/demo/infrastructure/security/SecurityConfig.java b/src/main/java/com/example/demo/infrastructure/security/SecurityConfig.java
+index d2d7536..e3cff68 100644
+--- a/src/main/java/com/example/demo/infrastructure/security/SecurityConfig.java
++++ b/src/main/java/com/example/demo/infrastructure/security/SecurityConfig.java
+@@ -45,7 +45,7 @@ public class SecurityConfig {
+             )
+             .authorizeHttpRequests(auth -> auth
+                 .requestMatchers("/favicon.ico", "/css/**", "/js/**", "/images/**", "/webjars/**").permitAll()
+-                .requestMatchers("/login.html", "/register.html", "/api/usuarios/cadastrar").permitAll()
++                .requestMatchers("/login", "/login.html", "/register", "/register.html").permitAll()
+                 .anyRequest().authenticated()
+             )
+             .formLogin(form -> form
+diff --git a/src/main/resources/static/js/dashboard.js b/src/main/resources/static/js/dashboard.js
+index 5686b48..57d1bff 100644
+--- a/src/main/resources/static/js/dashboard.js
++++ b/src/main/resources/static/js/dashboard.js
+@@ -114,14 +114,26 @@ function renderizarLista(lista) {
+             status = `${item.tipo} (${item.info})`;
+         }
+ 
++        // Correção InfoSec (XSS armazenado): montamos os nós via DOM/textContent
++        // em vez de innerHTML, já que os valores vêm de dados cadastrados por usuários.
+         const div = document.createElement('div');
+         div.className = 'card-item';
+-        div.innerHTML = `
+-            <div>
+-                <strong>${patrimonio}</strong> - ${colaborador}
+-                <br><small>${unidade} | ${status}</small>
+-            </div>
+-        `;
++
++        const linha1 = document.createElement('div');
++        const strong = document.createElement('strong');
++        strong.textContent = patrimonio;
++        linha1.appendChild(strong);
++        linha1.appendChild(document.createTextNode(` - ${colaborador}`));
++
++        const linha2 = document.createElement('small');
++        linha2.textContent = `${unidade} | ${status}`;
++
++        const wrapper = document.createElement('div');
++        wrapper.appendChild(linha1);
++        wrapper.appendChild(document.createElement('br'));
++        wrapper.appendChild(linha2);
++
++        div.appendChild(wrapper);
+         container.appendChild(div);
+     });
+ }
+diff --git a/src/main/resources/static/js/inventario.js b/src/main/resources/static/js/inventario.js
+index 218ece4..e891ac7 100644
+--- a/src/main/resources/static/js/inventario.js
++++ b/src/main/resources/static/js/inventario.js
+@@ -45,23 +45,46 @@ async function carregarModuloInventario(role) {
+                 if (status.toUpperCase() === "INATIVO")   classeSit = "sit-manutencao";
+                 if (status.toUpperCase() === "AVARIADO")  classeSit = "sit-alocado";
+ 
+-                let colunasHtml = `
+-                    <td class="txt-mono-primary">${nome}</td>
+-                    <td class="txt-mono-muted">${patrimonio}</td>
+-                    <td><span class="badge-sit ${classeSit}">${status}</span></td>
+-                `;
+-
++                // Correção InfoSec (XSS armazenado): valores vindos do backend nunca
++                // são inseridos via innerHTML — usamos textContent, que não interpreta HTML.
++                const tdNome = document.createElement("td");
++                tdNome.className = "txt-mono-primary";
++                tdNome.textContent = nome;
++
++                const tdPatrimonio = document.createElement("td");
++                tdPatrimonio.className = "txt-mono-muted";
++                tdPatrimonio.textContent = patrimonio;
++
++                const tdStatus = document.createElement("td");
++                const badge = document.createElement("span");
++                badge.className = `badge-sit ${classeSit}`;
++                badge.textContent = status;
++                tdStatus.appendChild(badge);
++
++                tr.appendChild(tdNome);
++                tr.appendChild(tdPatrimonio);
++                tr.appendChild(tdStatus);
++
++                const tdAcoes = document.createElement("td");
+                 if (role === "GESTOR") {
+-                    colunasHtml += `
+-                        <td style="text-align:right;">
+-                            <button class="btn-table-action" title="Editar" onclick="editarAtivo(${item.id})">✏️</button>
+-                            <button class="btn-table-action" title="Excluir" onclick="excluirAtivo(${item.id})">🗑️</button>
+-                        </td>`;
+-                } else {
+-                    colunasHtml += `<td></td>`;
++                    tdAcoes.style.textAlign = "right";
++
++                    const btnEditar = document.createElement("button");
++                    btnEditar.className = "btn-table-action";
++                    btnEditar.title = "Editar";
++                    btnEditar.textContent = "✏️";
++                    btnEditar.addEventListener("click", () => editarAtivo(item.id));
++
++                    const btnExcluir = document.createElement("button");
++                    btnExcluir.className = "btn-table-action";
++                    btnExcluir.title = "Excluir";
++                    btnExcluir.textContent = "🗑️";
++                    btnExcluir.addEventListener("click", () => excluirAtivo(item.id));
++
++                    tdAcoes.appendChild(btnEditar);
++                    tdAcoes.appendChild(btnExcluir);
+                 }
+-
+-                tr.innerHTML = colunasHtml;
++                tr.appendChild(tdAcoes);
+ 
+                 const nomeUpper = nome.toUpperCase();
+                 if (nomeUpper.includes("DELL")) {

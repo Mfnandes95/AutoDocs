@@ -114,14 +114,26 @@ function renderizarLista(lista) {
             status = `${item.tipo} (${item.info})`;
         }
 
+        // Correção InfoSec (XSS armazenado): montamos os nós via DOM/textContent
+        // em vez de innerHTML, já que os valores vêm de dados cadastrados por usuários.
         const div = document.createElement('div');
         div.className = 'card-item';
-        div.innerHTML = `
-            <div>
-                <strong>${patrimonio}</strong> - ${colaborador}
-                <br><small>${unidade} | ${status}</small>
-            </div>
-        `;
+
+        const linha1 = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = patrimonio;
+        linha1.appendChild(strong);
+        linha1.appendChild(document.createTextNode(` - ${colaborador}`));
+
+        const linha2 = document.createElement('small');
+        linha2.textContent = `${unidade} | ${status}`;
+
+        const wrapper = document.createElement('div');
+        wrapper.appendChild(linha1);
+        wrapper.appendChild(document.createElement('br'));
+        wrapper.appendChild(linha2);
+
+        div.appendChild(wrapper);
         container.appendChild(div);
     });
 }

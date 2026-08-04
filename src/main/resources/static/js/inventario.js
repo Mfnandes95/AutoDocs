@@ -45,23 +45,46 @@ async function carregarModuloInventario(role) {
                 if (status.toUpperCase() === "INATIVO")   classeSit = "sit-manutencao";
                 if (status.toUpperCase() === "AVARIADO")  classeSit = "sit-alocado";
 
-                let colunasHtml = `
-                    <td class="txt-mono-primary">${nome}</td>
-                    <td class="txt-mono-muted">${patrimonio}</td>
-                    <td><span class="badge-sit ${classeSit}">${status}</span></td>
-                `;
+                // Correção InfoSec (XSS armazenado): valores vindos do backend nunca
+                // são inseridos via innerHTML — usamos textContent, que não interpreta HTML.
+                const tdNome = document.createElement("td");
+                tdNome.className = "txt-mono-primary";
+                tdNome.textContent = nome;
 
+                const tdPatrimonio = document.createElement("td");
+                tdPatrimonio.className = "txt-mono-muted";
+                tdPatrimonio.textContent = patrimonio;
+
+                const tdStatus = document.createElement("td");
+                const badge = document.createElement("span");
+                badge.className = `badge-sit ${classeSit}`;
+                badge.textContent = status;
+                tdStatus.appendChild(badge);
+
+                tr.appendChild(tdNome);
+                tr.appendChild(tdPatrimonio);
+                tr.appendChild(tdStatus);
+
+                const tdAcoes = document.createElement("td");
                 if (role === "GESTOR") {
-                    colunasHtml += `
-                        <td style="text-align:right;">
-                            <button class="btn-table-action" title="Editar" onclick="editarAtivo(${item.id})">✏️</button>
-                            <button class="btn-table-action" title="Excluir" onclick="excluirAtivo(${item.id})">🗑️</button>
-                        </td>`;
-                } else {
-                    colunasHtml += `<td></td>`;
-                }
+                    tdAcoes.style.textAlign = "right";
 
-                tr.innerHTML = colunasHtml;
+                    const btnEditar = document.createElement("button");
+                    btnEditar.className = "btn-table-action";
+                    btnEditar.title = "Editar";
+                    btnEditar.textContent = "✏️";
+                    btnEditar.addEventListener("click", () => editarAtivo(item.id));
+
+                    const btnExcluir = document.createElement("button");
+                    btnExcluir.className = "btn-table-action";
+                    btnExcluir.title = "Excluir";
+                    btnExcluir.textContent = "🗑️";
+                    btnExcluir.addEventListener("click", () => excluirAtivo(item.id));
+
+                    tdAcoes.appendChild(btnEditar);
+                    tdAcoes.appendChild(btnExcluir);
+                }
+                tr.appendChild(tdAcoes);
 
                 const nomeUpper = nome.toUpperCase();
                 if (nomeUpper.includes("DELL")) {
