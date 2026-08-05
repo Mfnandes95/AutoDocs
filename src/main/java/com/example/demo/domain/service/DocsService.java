@@ -38,9 +38,19 @@ public class DocsService implements GerarDocumentoUseCase {
             TermoEntity termo = new TermoEntity();
             termo.setNomeColaborador(SanitizerUtils.sanitizar(dto.getNomeColaborador()));
             termo.setInfo(SanitizerUtils.sanitizar(dto.getInfo()));
-            termo.setPatrimonio(SanitizerUtils.sanitizar(dto.getPatrimonio()));
             termo.setUnidade(SanitizerUtils.sanitizar(dto.getUnidade()));
             termo.setTipo(SanitizerUtils.sanitizar(dto.getTipo()));
+
+            // Concatena patrimônios e equipamentos da lista para persistência no banco
+            if (dto.getItens() != null && !dto.getItens().isEmpty()) {
+                String patrimoniosConcatenados = dto.getItens().stream()
+                        .map(item -> SanitizerUtils.sanitizar(item.getPatrimonio()) 
+                                + (item.getEquipamento() != null ? " (" + SanitizerUtils.sanitizar(item.getEquipamento()) + ")" : ""))
+                        .collect(Collectors.joining("; "));
+                termo.setPatrimonio(patrimoniosConcatenados);
+            } else if (dto.getPatrimonio() != null) {
+                termo.setPatrimonio(SanitizerUtils.sanitizar(dto.getPatrimonio()));
+            }
 
             // 2. Mapeamento de Datas com Proteção Contra Nulo
             if (dto.getDataInicio() != null) {
@@ -61,6 +71,7 @@ public class DocsService implements GerarDocumentoUseCase {
             // 4. Preparar dados para o POI-TL
             DadosTermo dados = new DadosTermo();
             dados.setNomeColaborador(termo.getNomeColaborador());
+            // Se o POI-TL utilizar tabela ou lista para múltiplos itens no template .docx, passe dto.getItens() aqui
             
             return geradorPort.gerar(dados, file.getInputStream());
             
