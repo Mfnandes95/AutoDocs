@@ -44,18 +44,33 @@ public class SecurityConfig {
                 .csrfTokenRequestHandler(requestHandler)
             )
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/favicon.ico", "/css/**", "/js/**", "/images/**", "/webjars/**").permitAll()
-                .requestMatchers("/login", "/login.html", "/register", "/register.html").permitAll()
+                // Liberação de rotas públicas e recursos estáticos do Frontend SPA
+                .requestMatchers(
+                    "/", 
+                    "/index.html", 
+                    "/style.css", 
+                    "/app.js", 
+                    "/favicon.ico", 
+                    "/css/**", 
+                    "/js/**", 
+                    "/images/**", 
+                    "/webjars/**"
+                ).permitAll()
+                // Endpoints de autenticação pública
+                .requestMatchers("/api/usuarios/cadastrar", "/login").permitAll()
+                // Proteção para rotas de API
+                .requestMatchers("/api/**").authenticated()
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form
-                .loginPage("/login.html")
+                .loginPage("/index.html")
                 .loginProcessingUrl("/login")
                 .usernameParameter("email")
                 .passwordParameter("senha")
                 .defaultSuccessUrl("/index.html", true)
                 .permitAll()
             );
+
         return http.build();
     }
 

@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -15,11 +16,27 @@ public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    // Captura qualquer erro inesperado
+    /**
+     * Governança de TI / Observabilidade:
+     * Trata arquivos estáticos não encontrados (CSS, JS, imagens) diretamente como HTTP 404,
+     * impedindo a poluição dos logs de auditoria com erros internos (500).
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, String>> handleNoResourceFoundException(NoResourceFoundException e) {
+        logger.warn("Recurso estático não encontrado: {}", e.getResourcePath());
+
+        Map<String, String> response = new HashMap<>();
+        response.put("erro", "O recurso solicitado não foi encontrado no servidor.");
+        
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Segurança da Informação (Information Disclosure):
+     * Captura exceções genéricas/não tratadas sem expor o StackTrace para o cliente.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleAllExceptions(Exception e) {
-        // Correção InfoSec (Information Disclosure): a mensagem/stack trace da
-        // exceção nunca vai para o cliente — fica só no log do servidor.
         logger.error("Erro não tratado capturado pelo GlobalExceptionHandler", e);
 
         Map<String, String> response = new HashMap<>();
