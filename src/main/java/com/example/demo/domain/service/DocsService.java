@@ -1,22 +1,23 @@
 package com.example.demo.domain.service;
 
 import com.example.demo.domain.dto.DadosTermoDTO;
-import com.example.demo.domain.dto.DashboardDTO; // ADICIONADO
-import com.example.demo.domain.dto.EstatisticasDTO; // ADICIONADO
+import com.example.demo.domain.dto.DashboardDTO;
+import com.example.demo.domain.dto.EstatisticasDTO;
 import com.example.demo.domain.dto.TermoRequestDTO;
 import com.example.demo.domain.model.DadosTermo;
 import com.example.demo.domain.model.TermoEntity;
-import com.example.demo.domain.ports.out.DocsGerar;
-import com.example.demo.domain.ports.out.ArmazemPort;
 import com.example.demo.domain.ports.in.GerarDocumentoUseCase;
+import com.example.demo.domain.ports.out.ArmazemPort;
+import com.example.demo.domain.ports.out.DocsGerar;
 import com.example.demo.infrastructure.repository.TermoRepository;
 import com.example.demo.application.util.SanitizerUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.stream.Collectors;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class DocsService implements GerarDocumentoUseCase {
@@ -34,47 +35,52 @@ public class DocsService implements GerarDocumentoUseCase {
     @Override
     public byte[] processarGeracao(MultipartFile file, TermoRequestDTO dto) {
         try {
-            // 1. Criar e Popular a Entidade
             TermoEntity termo = new TermoEntity();
             termo.setNomeColaborador(SanitizerUtils.sanitizar(dto.getNomeColaborador()));
-            termo.setInfo(SanitizerUtils.sanitizar(dto.getInfo()));
-            termo.setUnidade(SanitizerUtils.sanitizar(dto.getUnidade()));
-            termo.setTipo(SanitizerUtils.sanitizar(dto.getTipo()));
+            termo.setInfo(    SanitizerUtils.sanitizar(nvl(dto.getInfo())));
+            termo.setTipo(    SanitizerUtils.sanitizar(nvl(dto.getTipo())));
+            termo.setUnidade( SanitizerUtils.sanitizar(nvl(dto.getUnidade())));
 
-            // Concatena patrimônios e equipamentos da lista para persistência no banco
+            termo.setDataInicio(  dto.getDataInicio().atStartOfDay());
+            termo.setDataTermino( dto.getDataTermino().atStartOfDay());
+            termo.setDataCriacao( LocalDateTime.now());
+
             if (dto.getItens() != null && !dto.getItens().isEmpty()) {
                 String patrimoniosConcatenados = dto.getItens().stream()
-                        .map(item -> SanitizerUtils.sanitizar(item.getPatrimonio()) 
-                                + (item.getEquipamento() != null ? " (" + SanitizerUtils.sanitizar(item.getEquipamento()) + ")" : ""))
+                        .map(item -> SanitizerUtils.sanitizar(item.getPatrimonio())
+                                + (item.getEquipamento() != null
+                                    ? " (" + SanitizerUtils.sanitizar(item.getEquipamento()) + ")"
+                                    : ""))
                         .collect(Collectors.joining("; "));
                 termo.setPatrimonio(patrimoniosConcatenados);
-            } else if (dto.getPatrimonio() != null) {
-                termo.setPatrimonio(SanitizerUtils.sanitizar(dto.getPatrimonio()));
+            } else {
+                termo.setPatrimonio(SanitizerUtils.sanitizar(nvl(dto.getPatrimonio())));
             }
 
-            // 2. Mapeamento de Datas com Proteção Contra Nulo
-            if (dto.getDataInicio() != null) {
-                termo.setDataInicio(dto.getDataInicio().atStartOfDay());
-            } else {
-                throw new RuntimeException("Data de início é obrigatória.");
-            }
-
-            if (dto.getDataTermino() != null) {
-                termo.setDataTermino(dto.getDataTermino().atStartOfDay());
-            } else {
-                throw new RuntimeException("Data de término é obrigatória.");
-            }
-            
-            // 3. Persistência
             reposit.save(termo);
 
-            // 4. Preparar dados para o POI-TL
             DadosTermo dados = new DadosTermo();
             dados.setNomeColaborador(termo.getNomeColaborador());
-            // Se o POI-TL utilizar tabela ou lista para múltiplos itens no template .docx, passe dto.getItens() aqui
-            
+            dados.setTipo(           termo.getTipo());
+            dados.setInfo(           termo.getInfo());
+            dados.setUnidade(        termo.getUnidade());
+            dados.setPatrimonio(     termo.getPatrimonio());
+            dados.setDataInicio(     termo.getDataInicio());
+            dados.setDataTermino(    termo.getDataTermino());
+            dados.setDataCriacao(    termo.getDataCriacao());
+
+            if (dto.getItens() != null && !dto.getItens().isEmpty()) {
+                List<DadosTermo.ItemTermo> itens = dto.getItens().stream()
+                        .map(item -> new DadosTermo.ItemTermo(
+                                SanitizerUtils.sanitizar(item.getPatrimonio()),
+                                SanitizerUtils.sanitizar(nvl(item.getEquipamento()))
+                        ))
+                        .collect(Collectors.toList());
+                dados.setItensLista(itens);
+            }
+
             return geradorPort.gerar(dados, file.getInputStream());
-            
+
         } catch (Exception e) {
             throw new RuntimeException("Erro ao processar termo: " + e.getMessage(), e);
         }
@@ -84,58 +90,40 @@ public class DocsService implements GerarDocumentoUseCase {
         return reposit.findAll().stream().map(termo -> {
             DadosTermoDTO dto = new DadosTermoDTO();
             dto.setNomeColaborador(termo.getNomeColaborador());
-            dto.setDataInicio(termo.getDataInicio() != null ? termo.getDataInicio().toLocalDate().toString() : null);
+            dto.setDataInicio( termo.getDataInicio()  != null ? termo.getDataInicio().toLocalDate().toString()  : null);
             dto.setDataTermino(termo.getDataTermino() != null ? termo.getDataTermino().toLocalDate().toString() : null);
-            dto.setPatrimonio(termo.getPatrimonio());
-            dto.setUnidade(termo.getUnidade());
-            dto.setTipo(termo.getTipo());
-            dto.setInfo(termo.getInfo());
+            dto.setPatrimonio( termo.getPatrimonio());
+            dto.setUnidade(    termo.getUnidade());
+            dto.setTipo(       termo.getTipo());
+            dto.setInfo(       termo.getInfo());
             return dto;
         }).collect(Collectors.toList());
     }
 
-    // =======================================================
-    // NOVOS MÉTODOS ADICIONADOS PARA RESOLVER O ERRO
-    // =======================================================
-
     public EstatisticasDTO obterEstatisticas() {
-        // Busca a contagem total de registros no banco de dados usando o repositório
         long total = reposit.count();
-
-        // Constrói o DTO de estatísticas. 
-        // Os demais valores estão estáticos para a compilação.
-        // No futuro, você pode criar consultas (Queries) específicas no TermoRepository para preenchê-los de verdade.
         return EstatisticasDTO.builder()
                 .totalTermosGerados(total)
-                .termosGeradosMesAtual(0L) // TODO: Implementar query por mês no repositório
-                .tempoMedioProcessamentoMs(125.5) // Exemplo fictício
+                .termosGeradosMesAtual(0L)
+                .tempoMedioProcessamentoMs(125.5)
                 .errosDeGeracaoMesAtual(0)
-                .termosPorCategoria(Map.of("Equipamentos", total)) // Exemplo genérico
+                .termosPorCategoria(Map.of("Equipamentos", total))
                 .build();
     }
 
     public DashboardDTO obterDashboard() {
         EstatisticasDTO estatisticas = obterEstatisticas();
-        
-        // Pega todos os termos (para simplificar agora) e limita para pegar apenas os últimos 5
-        // (Em um ambiente de produção, o ideal é usar PageRequest no repositório)
-        List<DadosTermoDTO> todosOsTermos = listarTodosOsTermos();
-        List<DadosTermoDTO> atividadesRecentes = todosOsTermos.size() > 5 
-                ? todosOsTermos.subList(0, 5) 
-                : todosOsTermos;
-
+        List<DadosTermoDTO> todos = listarTodosOsTermos();
+        List<DadosTermoDTO> recentes = todos.size() > 5 ? todos.subList(0, 5) : todos;
         return DashboardDTO.builder()
                 .estatisticasGerais(estatisticas)
-                .atividadesRecentes(atividadesRecentes)
+                .atividadesRecentes(recentes)
                 .build();
     }
 
-    // =======================================================
+    @Override public String executar(DadosTermo dadosDTO)                          { return null; }
+    @Override public byte[] gerarArquivoBinario(DadosTermo dadosDTO)               { return null; }
+    @Override public byte[] gerarArquivoDinamico(MultipartFile file, DadosTermo d) { return null; }
 
-    @Override
-    public String executar(DadosTermo dadosDTO) { return null; } 
-    @Override
-    public byte[] gerarArquivoBinario(DadosTermo dadosDTO) { return null; }
-    @Override
-    public byte[] gerarArquivoDinamico(MultipartFile file, DadosTermo dados) { return null; }
+    private String nvl(String valor) { return valor != null ? valor : ""; }
 }

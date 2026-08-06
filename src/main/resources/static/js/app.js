@@ -3,7 +3,6 @@
  * Gerenciador de Estado das Views, Dashboards/Gráficos, Inventário e Termos.
  */
 
-// Instâncias Globais dos Gráficos para Limpeza e Redesenho
 let officeChartInstance = null;
 let equipmentChartInstance = null;
 
@@ -15,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const menuToggle = document.getElementById('menu-toggle');
     const closeMenu = document.getElementById('close-menu');
 
-    // Alternância de Seções na Barra Lateral
     navItems.forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
@@ -32,24 +30,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Se navegou para o Dashboard, renderiza/atualiza os gráficos
             if (targetId === 'section-dashboard') {
                 loadDashboardCharts();
             }
 
-            // No mobile, recolhe a barra lateral ao escolher uma opção
             if (window.innerWidth <= 768 && sidebar) {
                 sidebar.classList.remove('active');
             }
         });
     });
 
-    // Abrir/Fechar Menu no Mobile
     menuToggle?.addEventListener('click', () => sidebar?.classList.add('active'));
     closeMenu?.addEventListener('click', () => sidebar?.classList.remove('active'));
 
-    // Carrega o estado inicial do Dashboard
-    loadDashboardCharts();
+    if (document.getElementById('view-app') && !document.getElementById('view-app').classList.contains('d-none')) {
+        loadDashboardCharts();
+    }
 });
 
 // --- 2. CONTROLE DE AUTENTICAÇÃO (LOGIN / REGISTRO / LOGOUT) ---
@@ -58,43 +54,112 @@ function switchAuthView(view) {
     const boxRegister = document.getElementById('box-register');
 
     if (view === 'register') {
-        boxLogin.classList.add('d-none');
-        boxRegister.classList.remove('d-none');
+        boxLogin?.classList.add('d-none');
+        boxRegister?.classList.remove('d-none');
     } else {
-        boxRegister.classList.add('d-none');
-        boxLogin.classList.remove('d-none');
+        boxRegister?.classList.add('d-none');
+        boxLogin?.classList.remove('d-none');
     }
 }
 
-document.getElementById('form-login')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    document.getElementById('view-auth').classList.add('d-none');
-    document.getElementById('view-app').classList.remove('d-none');
-    loadDashboardCharts();
+// Submissão do Formulário de Login com captura tratada (.trim)
+document.addEventListener('DOMContentLoaded', () => {
+    const loginForm = document.getElementById('form-login');
+
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const btn = loginForm.querySelector('button[type="submit"]');
+            const originalText = btn ? btn.innerHTML : '';
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Entrando...';
+            }
+
+            // Captura os elementos de input suportando diferentes convenções de ID/Name
+            const emailInput = loginForm.querySelector('input[name="email"], input[name="username"], #login-email, #email');
+            const passwordInput = loginForm.querySelector('input[name="password"], input[name="senha"], #login-password, #senha');
+
+            // Garante o trim() para remover caracteres invisíveis ou espaços extras
+            const emailValue = emailInput ? emailInput.value.trim() : '';
+            const passwordValue = passwordInput ? passwordInput.value.trim() : '';
+
+            // Monta os parâmetros exatamente com as chaves "email" e "password" configuradas no Spring Security
+            const bodyParams = new URLSearchParams();
+            bodyParams.append('email', emailValue);
+            bodyParams.append('password', passwordValue);
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-XSRF-TOKEN': getCsrfToken()
+                    },
+                    credentials: 'include',
+                    body: bodyParams
+                });
+
+                if (response.ok || response.status === 200) {
+                    document.getElementById('view-auth')?.classList.add('d-none');
+                    document.getElementById('view-app')?.classList.remove('d-none');
+                    
+                    loadDashboardCharts();
+                    showToast('Login realizado com sucesso!', 'success');
+                } else {
+                    showToast('Usuário ou senha inválidos.', 'error');
+                }
+            } catch (error) {
+                console.error('Erro na requisição de login:', error);
+                showToast('Falha na comunicação com o servidor.', 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            }
+        });
+    }
 });
 
 function executeLogout() {
     closeModal('modal-logout');
-    document.getElementById('view-app').classList.add('d-none');
-    document.getElementById('view-auth').classList.remove('d-none');
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/logout';
+
+    const csrf = document.createElement('input');
+    csrf.type = 'hidden';
+    csrf.name = '_csrf';
+    csrf.value = getCsrfToken();
+    form.appendChild(csrf);
+
+    document.body.appendChild(form);
+    form.submit();
 }
 
-// --- 3. RELATÓRIOS E GRÁFICOS (CHART.JS - ESTADO INICIAL VAZIO) ---
+// --- 3. RELATÓRIOS E GRÁFICOS (CHART.JS) ---
 async function loadDashboardCharts() {
     if (typeof Chart === 'undefined') return;
 
     Chart.defaults.color = '#9ca3af';
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
 
-    // Estrutura inicial sem dados mocados (pronta para receber resposta REST)
     let officeLabels = [];
     let officeValues = [];
     let equipmentLabels = [];
     let equipmentValues = [];
 
     try {
-        // Exemplo de integração futura com endpoint real de métricas
-        const response = await fetch('/api/dashboard/metrics');
+        const response = await fetch('/api/dashboard/metrics', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'X-XSRF-TOKEN': getCsrfToken()
+            }
+        });
         if (response.ok) {
             const data = await response.json();
             officeLabels = data.offices?.map(o => o.nome) || [];
@@ -102,16 +167,20 @@ async function loadDashboardCharts() {
             equipmentLabels = data.equipments?.map(e => e.categoria) || [];
             equipmentValues = data.equipments?.map(e => e.qtd) || [];
 
-            document.getElementById('kpi-total-borrowed').innerText = data.totalEmprestimos || 0;
-            document.getElementById('kpi-total-offices').innerText = data.totalEscritorios || 0;
-            document.getElementById('kpi-total-types').innerText = data.totalTipos || 0;
-            document.getElementById('kpi-expiring-soon').innerText = data.aVencer || 0;
+            const totalBorrowed = document.getElementById('kpi-total-borrowed');
+            const totalOffices = document.getElementById('kpi-total-offices');
+            const totalTypes = document.getElementById('kpi-total-types');
+            const expiringSoon = document.getElementById('kpi-expiring-soon');
+
+            if (totalBorrowed) totalBorrowed.innerText = data.totalEmprestimos || 0;
+            if (totalOffices) totalOffices.innerText = data.totalEscritorios || 0;
+            if (totalTypes) totalTypes.innerText = data.totalTipos || 0;
+            if (expiringSoon) expiringSoon.innerText = data.aVencer || 0;
         }
     } catch (e) {
-        // Fallback para exibição limpa caso a API ainda não esteja respondendo
+        console.warn('Erro ao carregar métricas do dashboard:', e);
     }
 
-    // Renderiza Gráfico 1 (Barras)
     const ctxOffice = document.getElementById('chartOffices');
     if (ctxOffice) {
         if (officeChartInstance) officeChartInstance.destroy();
@@ -140,7 +209,6 @@ async function loadDashboardCharts() {
         });
     }
 
-    // Renderiza Gráfico 2 (Doughnut)
     const ctxEquipment = document.getElementById('chartEquipment');
     if (ctxEquipment) {
         if (equipmentChartInstance) equipmentChartInstance.destroy();
@@ -168,8 +236,7 @@ async function loadDashboardCharts() {
     }
 }
 
-// --- 4. GERADOR DE TERMOS DE RESPONSABILIDADE (COM MULTI-ITENS E TEMPLATE DOCX) ---
-
+// --- 4. GERADOR DE TERMOS DE RESPONSABILIDADE ---
 function addTermItemRow() {
     const listContainer = document.getElementById('term-items-list');
     if (!listContainer) return;
@@ -203,7 +270,6 @@ function removeTermItemRow(button) {
     }
 }
 
-// Validação Geral do Formulário
 function validateTermForm() {
     const user = document.getElementById('term-user')?.value.trim();
     const dateStart = document.getElementById('term-date-start')?.value;
@@ -213,10 +279,7 @@ function validateTermForm() {
 
     if (!btn) return;
 
-    // Valida se o arquivo modelo .docx foi selecionado
     const hasFile = templateFileInput && templateFileInput.files.length > 0;
-
-    // Valida se todas as linhas de patrimônio foram preenchidas
     const itemRows = document.querySelectorAll('.term-item-row');
     let hasValidItems = itemRows.length > 0;
 
@@ -228,94 +291,96 @@ function validateTermForm() {
     });
 
     const isDatesValid = dateStart && dateEnd && new Date(dateEnd) >= new Date(dateStart);
-    
-    // Libera o botão apenas com todas as condições válidas
     btn.disabled = !(user && isDatesValid && hasValidItems && hasFile);
 }
 
-// Envio Multipart/Form-Data do Formulário
 async function handleGenerateTerm(event) {
     if (event) event.preventDefault();
 
-    const btn = document.getElementById('btn-generate-doc'); // ou o ID do seu botão
+    const btn = document.getElementById('btn-generate-doc');
     const originalText = btn ? btn.innerHTML : '';
 
-    // 1. Pega o arquivo .docx do input de arquivo original do seu HTML
-    const fileInput = document.getElementById('term-template'); // Substitua pelo ID real do seu input file
+    const fileInput = document.getElementById('term-template');
     if (!fileInput || !fileInput.files[0]) {
-        showToast('Selecione um arquivo modelo (.docx)', 'error'); // Ou o seu método de alerta atual
+        showToast('Selecione um arquivo modelo (.docx)', 'error');
         return;
     }
 
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = 'Processando...';
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando...';
     }
 
-    // 2. Mapeia os dados do seu formulário para o DTO
+    const itemRows = document.querySelectorAll('.term-item-row');
+    const itens = [];
+    itemRows.forEach(row => {
+        const patrimonio  = row.querySelector('.item-patrimonio')?.value.trim();
+        const equipamento = row.querySelector('.item-equipamento')?.value.trim() || '';
+        if (patrimonio) itens.push({ patrimonio, equipamento });
+    });
+
     const payload = {
-        nomeColaborador: document.getElementById('term-user').value.trim(),
-        dataInicio: document.getElementById('term-date-start').value,
-        dataTermino: document.getElementById('term-date-end').value,
-        // ... adicione os outros campos conforme o seu HTML original possui
+        nomeColaborador: document.getElementById('term-user')?.value.trim()       || '',
+        dataInicio:      document.getElementById('term-date-start')?.value         || '',
+        dataTermino:     document.getElementById('term-date-end')?.value           || '',
+        unidade:         document.getElementById('term-unidade')?.value?.trim()    || '',
+        tipo:            document.getElementById('term-tipo')?.value?.trim()       || '',
+        info:            document.getElementById('term-info')?.value?.trim()       || '',
+        itens: itens
     };
 
-    // 3. Monta o FormData (Obrigatório para enviar Arquivo + JSON juntos)
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
     formData.append('dto', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
 
     try {
-        const response = dictFetch = await fetch('/api/termos/gerar', {
+        const response = await fetch('/api/termos/gerar', {
             method: 'POST',
+            credentials: 'include',
             headers: {
-                // Se você usa token CSRF ou JWT, mantenha aqui. 
-                // ATENÇÃO: NÃO inclua 'Content-Type': 'application/json' ou 'multipart/form-data'. 
-                // O navegador precisa gerar o boundary do FormData sozinho.
-                'X-XSRF-TOKEN': typeof getCsrfToken === 'function' ? getCsrfToken() : '' 
+                'X-XSRF-TOKEN': getCsrfToken()
             },
             body: formData
         });
 
-        // 4. CORREÇÃO CRUCIAL PARA O ARQUIVO NÃO VIR CORROMPIDO:
-        // Se o servidor recusar, lemos o erro em JSON em vez de tentar baixar como PDF
+        const contentType = response.headers.get('content-type') || '';
+
+        // SE O SERVIDOR RETORNAR HTML OU REDIRECIONAR (SESSÃO INVÁLIDA)
+        if (response.redirected || contentType.includes('text/html')) {
+            showToast('Sessão expirada ou não autorizada. Faça login novamente.', 'error');
+            document.getElementById('view-app')?.classList.add('d-none');
+            document.getElementById('view-auth')?.classList.remove('d-none');
+            return;
+        }
+
         if (!response.ok) {
             let errorMsg = 'Falha ao processar o documento.';
             try {
                 const errorJson = await response.json();
                 errorMsg = errorJson.mensagem || errorJson.message || errorMsg;
-            } catch (e) {
+            } catch (_) {
                 const rawText = await response.text();
                 if (rawText) errorMsg = rawText;
             }
             throw new Error(errorMsg);
         }
 
-        // 5. Se deu tudo certo, converte para Blob e força o download limpo do PDF
         const blob = await response.blob();
         const downloadUrl = window.URL.createObjectURL(blob);
-        
+
         const a = document.createElement('a');
         a.href = downloadUrl;
-        a.download = `Termo_Responsabilidade.pdf`;
+        a.download = 'Termo_Responsabilidade.docx';
         document.body.appendChild(a);
         a.click();
         a.remove();
-        
         window.URL.revokeObjectURL(downloadUrl);
 
-        if (typeof showToast === 'function') {
-            showToast('Termo gerado com sucesso!', 'success');
-        }
+        showToast('Termo gerado com sucesso!', 'success');
 
     } catch (error) {
-        console.error('Erro:', error);
-        // Exibe o erro real em texto na tela, evitando corromper arquivos
-        if (typeof showToast === 'function') {
-            showToast(error.message, 'error');
-        } else {
-            alert(error.message);
-        }
+        console.error('Erro ao gerar termo:', error);
+        showToast(error.message, 'error');
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -324,25 +389,28 @@ async function handleGenerateTerm(event) {
     }
 }
 
-// --- 5. CADASTRO DE INVENTÁRIO (VIA SPRING REST) ---
+// --- 5. CADASTRO DE INVENTÁRIO ---
 async function handleSaveInventoryItem(event) {
-    event.preventDefault();
+    if (event) event.preventDefault();
 
     const btn = document.getElementById('btn-save-item');
+    if (!btn) return;
 
     const payload = {
-        patrimonio: document.getElementById('item-patrimonio').value.trim(),
-        nome: document.getElementById('item-nome').value.trim(),
-        localizacao: document.getElementById('item-localizacao').value.trim(),
-        status: document.getElementById('item-status').value
+        patrimonio: document.getElementById('item-patrimonio')?.value.trim() || '',
+        nome: document.getElementById('item-nome')?.value.trim() || '',
+        localizacao: document.getElementById('item-localizacao')?.value.trim() || '',
+        status: document.getElementById('item-status')?.value || 'Ativo'
     };
 
+    const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
 
     try {
         const response = await fetch('/api/inventario', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
                 'X-XSRF-TOKEN': getCsrfToken()
@@ -361,7 +429,7 @@ async function handleSaveInventoryItem(event) {
         addInventoryRowToTable(savedItem);
 
         showToast('Ativo cadastrado com sucesso!', 'success');
-        document.getElementById('form-inventory-item').reset();
+        document.getElementById('form-inventory-item')?.reset();
         closeModal('modal-item');
 
     } catch (error) {
@@ -369,7 +437,7 @@ async function handleSaveInventoryItem(event) {
         showToast(error.message || 'Falha na comunicação com o servidor.', 'error');
     } finally {
         btn.disabled = false;
-        btn.innerHTML = 'Salvar Ativo';
+        btn.innerHTML = originalText;
     }
 }
 
@@ -377,14 +445,12 @@ function addInventoryRowToTable(item) {
     const tbody = document.getElementById('inventory-table-body');
     if (!tbody) return;
 
-    // Remove a mensagem de tabela vazia se existir
     const emptyRow = document.getElementById('empty-inventory-row');
     if (emptyRow) {
         emptyRow.remove();
     }
 
     const badgeClass = item.status === 'Ativo' ? 'online' : 'danger';
-    
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td>${item.patrimonio}</td>
@@ -396,12 +462,13 @@ function addInventoryRowToTable(item) {
             <button class="action-btn delete" onclick="openModal('modal-delete-item')"><i class="fas fa-trash"></i></button>
         </td>
     `;
-    
     tbody.prepend(tr);
 }
 
 function filterInventory() {
-    const term = document.getElementById('inventory-search').value.toLowerCase();
+    const searchInput = document.getElementById('inventory-search');
+    if (!searchInput) return;
+    const term = searchInput.value.toLowerCase();
     const rows = document.querySelectorAll('#inventory-table tbody tr');
 
     rows.forEach(row => {
@@ -411,7 +478,7 @@ function filterInventory() {
     });
 }
 
-// --- 6. UTILITÁRIOS: MODAIS, TOASTS & SEGURANÇA ---
+// --- 6. UTILITÁRIOS ---
 function openModal(modalId) {
     const modal = document.getElementById(modalId);
     const overlay = document.getElementById('overlay');

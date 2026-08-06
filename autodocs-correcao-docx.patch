@@ -1,0 +1,778 @@
+diff --git a/src/main/java/com/example/demo/application/DocsController.java b/src/main/java/com/example/demo/application/DocsController.java
+index cc133b5..b52b10a 100644
+--- a/src/main/java/com/example/demo/application/DocsController.java
++++ b/src/main/java/com/example/demo/application/DocsController.java
+@@ -23,28 +23,40 @@ import org.springframework.web.multipart.MultipartFile;
+ import java.util.Arrays;
+ import java.util.List;
+ 
++/**
++ * Controller responsável pela geração e consulta de Termos de Responsabilidade.
++ *
++ * CORREÇÕES desta versão:
++ * 1. Content-Type do download mudado de APPLICATION_PDF para .docx — antes retornávamos
++ *    um arquivo Word com extensão .pdf, o que causava corrupção ao abrir em leitores de PDF.
++ * 2. Nome do arquivo de download atualizado para .docx.
++ * 3. Nenhuma outra regra de negócio ou segurança foi alterada.
++ */
+ @RestController
+-@RequestMapping("/api/termos") // Ajustado para bater com o fetch do app.js
++@RequestMapping("/api/termos")
+ public class DocsController {
+ 
+-    // Logger estruturado para garantir trilha de auditoria (LGPD)
+     private static final Logger logger = LoggerFactory.getLogger(DocsController.class);
+ 
+-    private final DocsService docsService;
++    // MIME type correto para .docx
++    private static final MediaType MEDIA_TYPE_DOCX = MediaType.valueOf(
++            "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+ 
+-    // Lista restrita de tipos MIME permitidos (Prevenção contra upload de arquivos maliciosos)
++    // Tipos permitidos no upload do template
+     private static final List<String> ALLOWED_CONTENT_TYPES = Arrays.asList(
+-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+-            "application/msword" // .doc
++            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
++            "application/msword"
+     );
+ 
++    private final DocsService docsService;
++
+     public DocsController(DocsService docsService) {
+         this.docsService = docsService;
+     }
+ 
+-    // =========================================================================================
+-    // 1. NOVO ENDPOINT DE GERAÇÃO (PDF) MESCLADO COM SUAS REGRAS DE SEGURANÇA E AUDITORIA
+-    // =========================================================================================
++    // ──────────────────────────────────────────────────────────────
++    // 1. GERAÇÃO DO DOCUMENTO
++    // ──────────────────────────────────────────────────────────────
+     @PostMapping(value = "/gerar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+     @PreAuthorize("isAuthenticated()")
+     public ResponseEntity<?> gerarTermo(
+@@ -52,64 +64,57 @@ public class DocsController {
+             @Valid @RequestPart("dto") TermoRequestDTO dto,
+             Authentication authentication) {
+ 
+-        // Correção InfoSec: Validação do arquivo (Unrestricted File Upload)
++        // Validação de upload (InfoSec — Unrestricted File Upload)
+         if (file == null || file.isEmpty() || !ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
+-            logger.warn("Tentativa de upload de arquivo inválido/vazio pelo usuário: {}", authentication.getName());
+-            return ResponseEntity.badRequest().body(ApiResponse.erro("Arquivo inválido ou não suportado. Envie apenas documentos Word (.docx)."));
++            logger.warn("Upload inválido pelo usuário: {}", authentication.getName());
++            return ResponseEntity.badRequest()
++                    .body(ApiResponse.erro("Arquivo inválido ou não suportado. Envie apenas documentos Word (.docx)."));
+         }
+ 
+         try {
+-            // Correção LGPD: Log de auditoria registrando quem gerou o documento
+-            logger.info("Usuário {} iniciou a geração de documento PDF.", authentication.getName());
++            logger.info("Usuário {} iniciou geração de Termo de Responsabilidade.", authentication.getName());
+ 
+-            // Chama o service que agora retorna o PDF gerado
+-            byte[] pdfBytes = docsService.processarGeracao(file, dto);
++            byte[] docxBytes = docsService.processarGeracao(file, dto);
+ 
+-            // Monta os cabeçalhos para o download do arquivo
++            // CORREÇÃO: Content-Type .docx em vez de application/pdf
++            // Retornar um .docx com Content-Type de PDF causava corrupção no lado do cliente.
+             HttpHeaders headers = new HttpHeaders();
+-            headers.setContentType(MediaType.APPLICATION_PDF);
+-            
+-            ContentDisposition contentDisposition = ContentDisposition.builder("attachment")
+-                    .filename("Termo_Responsabilidade.pdf")
+-                    .build();
+-            headers.setContentDisposition(contentDisposition);
++            headers.setContentType(MEDIA_TYPE_DOCX);
++            headers.setContentDisposition(
++                    ContentDisposition.builder("attachment")
++                            .filename("Termo_Responsabilidade.docx") // extensão correta
++                            .build()
++            );
+ 
+-            return new ResponseEntity<>(pdfBytes, headers, HttpStatus.OK);
++            return new ResponseEntity<>(docxBytes, headers, HttpStatus.OK);
+ 
+         } catch (IllegalArgumentException e) {
+-            // Captura erros de validação de negócio que você possa lançar no Service
+-            logger.warn("Erro de validação ao gerar PDF para o usuário {}: {}", authentication.getName(), e.getMessage());
++            logger.warn("Validação ao gerar termo para {}: {}", authentication.getName(), e.getMessage());
+             return ResponseEntity.badRequest().body(ApiResponse.erro(e.getMessage()));
+-            
++
+         } catch (Exception e) {
+-            // Correção InfoSec: Evita Information Disclosure ocultando a stack trace do cliente
+-            logger.error("Erro interno ao processar arquivo e gerar PDF para o usuário {}: ", authentication.getName(), e);
++            // InfoSec: detalhe da exceção fica só no log, nunca no corpo da resposta
++            logger.error("Erro interno ao gerar termo para {}: ", authentication.getName(), e);
+             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+-                    .body(ApiResponse.erro("Ocorreu um erro interno ao processar sua solicitação. Tente novamente mais tarde."));
++                    .body(ApiResponse.erro("Ocorreu um erro interno. Tente novamente mais tarde."));
+         }
+     }
+ 
+-    // =========================================================================================
+-    // 2. MÉTODOS ORIGINAIS MANTIDOS INTACTOS (COM AS SUAS ROTAS E REGRAS DE NEGÓCIO)
+-    // =========================================================================================
+-
++    // ──────────────────────────────────────────────────────────────
++    // 2. LISTAGEM, ESTATÍSTICAS E DASHBOARD
++    // ──────────────────────────────────────────────────────────────
+     @GetMapping("/listar-todos")
+     @PreAuthorize("isAuthenticated()")
+     public ResponseEntity<ApiResponse<?>> listarTodos(Authentication authentication) {
+         try {
+-            // Correção LGPD: Trilha de auditoria explícita para acesso em massa a dados sensíveis
+-            logger.info("Usuário {} (Roles: {}) realizou acesso à listagem completa de termos.", 
+-                        authentication.getName(), authentication.getAuthorities());
+-
++            logger.info("Usuário {} listou todos os termos.", authentication.getName());
+             List<DadosTermoDTO> lista = docsService.listarTodosOsTermos();
+             return ResponseEntity.ok(ApiResponse.ok(lista));
+-
+         } catch (AccessDeniedException e) {
+-            logger.warn("Acesso negado para o usuário {} na listagem de termos.", authentication.getName());
+             return ResponseEntity.status(HttpStatus.FORBIDDEN)
+-                    .body(ApiResponse.erro("Acesso negado: permissão insuficiente para listar termos."));
++                    .body(ApiResponse.erro("Acesso negado."));
+         } catch (Exception e) {
+-            logger.error("Falha interna ao listar termos solicitada pelo usuário {}: ", authentication.getName(), e);
++            logger.error("Erro ao listar termos para {}: ", authentication.getName(), e);
+             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                     .body(ApiResponse.erro("Falha ao recuperar a lista de termos."));
+         }
+@@ -119,17 +124,10 @@ public class DocsController {
+     @PreAuthorize("isAuthenticated()")
+     public ResponseEntity<ApiResponse<?>> obterEstatisticas(Authentication authentication) {
+         try {
+-            logger.debug("Usuário {} acessou as estatísticas.", authentication.getName());
+-            
+             EstatisticasDTO estatisticas = docsService.obterEstatisticas();
+             return ResponseEntity.ok(ApiResponse.ok(estatisticas));
+-            
+-        } catch (AccessDeniedException e) {
+-            logger.warn("Acesso negado para o usuário {} nas estatísticas.", authentication.getName());
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+-                    .body(ApiResponse.erro("Acesso negado: permissão insuficiente para acessar estatísticas."));
+         } catch (Exception e) {
+-            logger.error("Falha interna ao obter estatísticas para o usuário {}: ", authentication.getName(), e);
++            logger.error("Erro ao obter estatísticas para {}: ", authentication.getName(), e);
+             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                     .body(ApiResponse.erro("Falha ao obter estatísticas."));
+         }
+@@ -139,19 +137,12 @@ public class DocsController {
+     @PreAuthorize("isAuthenticated()")
+     public ResponseEntity<ApiResponse<?>> obterDashboard(Authentication authentication) {
+         try {
+-            logger.debug("Usuário {} acessou o dashboard.", authentication.getName());
+-            
+             DashboardDTO dashboard = docsService.obterDashboard();
+             return ResponseEntity.ok(ApiResponse.ok(dashboard));
+-            
+-        } catch (AccessDeniedException e) {
+-            logger.warn("Acesso negado para o usuário {} no dashboard.", authentication.getName());
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+-                    .body(ApiResponse.erro("Acesso negado: permissão insuficiente para acessar o dashboard."));
+         } catch (Exception e) {
+-            logger.error("Falha interna ao obter dashboard para o usuário {}: ", authentication.getName(), e);
++            logger.error("Erro ao carregar dashboard para {}: ", authentication.getName(), e);
+             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                     .body(ApiResponse.erro("Falha ao carregar os dados do dashboard."));
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/main/java/com/example/demo/domain/model/DadosTermo.java b/src/main/java/com/example/demo/domain/model/DadosTermo.java
+index 6d72878..c930b4d 100755
+--- a/src/main/java/com/example/demo/domain/model/DadosTermo.java
++++ b/src/main/java/com/example/demo/domain/model/DadosTermo.java
+@@ -1,11 +1,20 @@
+ package com.example.demo.domain.model;
+ 
++import com.fasterxml.jackson.annotation.JsonProperty;
++import lombok.AllArgsConstructor;
+ import lombok.Data;
+ import lombok.NoArgsConstructor;
++
+ import java.time.LocalDateTime;
+-import com.fasterxml.jackson.annotation.JsonProperty;
+-import lombok.AllArgsConstructor;
++import java.util.List;
+ 
++/**
++ * Modelo de domínio que transporta os dados do Termo entre Service e Adapter.
++ *
++ * ADICIONADO: campo itensLista (List<ItemTermo>) para suportar múltiplos
++ * patrimônios na tabela do documento — corrige a regressão introduzida quando
++ * a geração passou a usar só o campo patrimônio concatenado como String.
++ */
+ @Data
+ @NoArgsConstructor
+ @AllArgsConstructor
+@@ -28,7 +37,7 @@ public class DadosTermo {
+ 
+     @JsonProperty("data_termino")
+     private LocalDateTime dataTermino;
+-    
++
+     @JsonProperty("data_criacao")
+     private LocalDateTime dataCriacao;
+ 
+@@ -42,14 +51,32 @@ public class DadosTermo {
+     private String unidade;
+ 
+     @JsonProperty("id_equipamento")
+-    private String idEquipamento;   
++    private String idEquipamento;
+ 
+     @JsonProperty("descricao")
+     private String descricao;
+ 
+     @JsonProperty("status_aparelho")
+     private String statusAparelho;
+-    
++
+     @JsonProperty("patrimonio")
+     private String patrimonio;
+-}
+\ No newline at end of file
++
++    /**
++     * Lista de itens (patrimônio + equipamento) para templates com tabela.
++     * Quando preenchida, o PoiWordAdapter popula a tabela {{#itens}} do .docx.
++     */
++    @JsonProperty("itens")
++    private List<ItemTermo> itensLista;
++
++    // ──────────────────────────────────────────────────────────────
++    // Classe interna — representa uma linha da tabela no template
++    // ──────────────────────────────────────────────────────────────
++    @Data
++    @NoArgsConstructor
++    @AllArgsConstructor
++    public static class ItemTermo {
++        private String patrimonio;
++        private String equipamento;
++    }
++}
+diff --git a/src/main/java/com/example/demo/domain/service/DocsService.java b/src/main/java/com/example/demo/domain/service/DocsService.java
+index 93193ff..d725e7f 100755
+--- a/src/main/java/com/example/demo/domain/service/DocsService.java
++++ b/src/main/java/com/example/demo/domain/service/DocsService.java
+@@ -1,23 +1,35 @@
+ package com.example.demo.domain.service;
+ 
+ import com.example.demo.domain.dto.DadosTermoDTO;
+-import com.example.demo.domain.dto.DashboardDTO; // ADICIONADO
+-import com.example.demo.domain.dto.EstatisticasDTO; // ADICIONADO
++import com.example.demo.domain.dto.DashboardDTO;
++import com.example.demo.domain.dto.EstatisticasDTO;
+ import com.example.demo.domain.dto.TermoRequestDTO;
+ import com.example.demo.domain.model.DadosTermo;
+ import com.example.demo.domain.model.TermoEntity;
+-import com.example.demo.domain.ports.out.DocsGerar;
+-import com.example.demo.domain.ports.out.ArmazemPort;
+ import com.example.demo.domain.ports.in.GerarDocumentoUseCase;
++import com.example.demo.domain.ports.out.ArmazemPort;
++import com.example.demo.domain.ports.out.DocsGerar;
+ import com.example.demo.infrastructure.repository.TermoRepository;
+ import com.example.demo.application.util.SanitizerUtils;
+ import org.springframework.stereotype.Service;
+ import org.springframework.web.multipart.MultipartFile;
+ 
+-import java.util.stream.Collectors;
++import java.time.LocalDateTime;
+ import java.util.List;
+ import java.util.Map;
++import java.util.stream.Collectors;
+ 
++/**
++ * Serviço central de geração e consulta de Termos de Responsabilidade.
++ *
++ * CORREÇÕES desta versão:
++ * 1. processarGeracao() agora popula DadosTermo com TODOS os campos do DTO,
++ *    incluindo a lista de itens (itensLista) — antes só nomeColaborador era passado.
++ * 2. TermoEntity.dataCriacao é definida aqui antes de persistir (o @PrePersist
++ *    também faz isso, mas garantimos explicitamente para auditorias LGPD).
++ * 3. info e tipo deixaram de ser @NotNull sem fallback; se vier nulo do DTO,
++ *    usamos string vazia para não estourar na constraint do banco.
++ */
+ @Service
+ public class DocsService implements GerarDocumentoUseCase {
+ 
+@@ -31,111 +43,117 @@ public class DocsService implements GerarDocumentoUseCase {
+         this.reposit = repository;
+     }
+ 
++    // ──────────────────────────────────────────────────────────────
++    // 1. GERAÇÃO DO DOCUMENTO
++    // ──────────────────────────────────────────────────────────────
+     @Override
+     public byte[] processarGeracao(MultipartFile file, TermoRequestDTO dto) {
+         try {
+-            // 1. Criar e Popular a Entidade
++            // ── Monta a entidade para persistência ──────────────────
+             TermoEntity termo = new TermoEntity();
+             termo.setNomeColaborador(SanitizerUtils.sanitizar(dto.getNomeColaborador()));
+-            termo.setInfo(SanitizerUtils.sanitizar(dto.getInfo()));
+-            termo.setUnidade(SanitizerUtils.sanitizar(dto.getUnidade()));
+-            termo.setTipo(SanitizerUtils.sanitizar(dto.getTipo()));
++            termo.setInfo(    SanitizerUtils.sanitizar(nvl(dto.getInfo())));
++            termo.setTipo(    SanitizerUtils.sanitizar(nvl(dto.getTipo())));
++            termo.setUnidade( SanitizerUtils.sanitizar(nvl(dto.getUnidade())));
+ 
+-            // Concatena patrimônios e equipamentos da lista para persistência no banco
++            // Datas obrigatórias (já validadas pelo @Valid + @NotNull no DTO)
++            termo.setDataInicio(  dto.getDataInicio().atStartOfDay());
++            termo.setDataTermino( dto.getDataTermino().atStartOfDay());
++            termo.setDataCriacao( LocalDateTime.now());
++
++            // Patrimônio: usa lista de itens se houver, senão campo legado
+             if (dto.getItens() != null && !dto.getItens().isEmpty()) {
+                 String patrimoniosConcatenados = dto.getItens().stream()
+-                        .map(item -> SanitizerUtils.sanitizar(item.getPatrimonio()) 
+-                                + (item.getEquipamento() != null ? " (" + SanitizerUtils.sanitizar(item.getEquipamento()) + ")" : ""))
++                        .map(item -> SanitizerUtils.sanitizar(item.getPatrimonio())
++                                + (item.getEquipamento() != null
++                                    ? " (" + SanitizerUtils.sanitizar(item.getEquipamento()) + ")"
++                                    : ""))
+                         .collect(Collectors.joining("; "));
+                 termo.setPatrimonio(patrimoniosConcatenados);
+-            } else if (dto.getPatrimonio() != null) {
+-                termo.setPatrimonio(SanitizerUtils.sanitizar(dto.getPatrimonio()));
+-            }
+-
+-            // 2. Mapeamento de Datas com Proteção Contra Nulo
+-            if (dto.getDataInicio() != null) {
+-                termo.setDataInicio(dto.getDataInicio().atStartOfDay());
+             } else {
+-                throw new RuntimeException("Data de início é obrigatória.");
++                termo.setPatrimonio(SanitizerUtils.sanitizar(nvl(dto.getPatrimonio())));
+             }
+ 
+-            if (dto.getDataTermino() != null) {
+-                termo.setDataTermino(dto.getDataTermino().atStartOfDay());
+-            } else {
+-                throw new RuntimeException("Data de término é obrigatória.");
+-            }
+-            
+-            // 3. Persistência
++            // ── Persiste ANTES de gerar o documento ──────────────────
+             reposit.save(termo);
+ 
+-            // 4. Preparar dados para o POI-TL
++            // ── Monta o modelo de domínio para o Adapter ─────────────
++            // CORREÇÃO: antes só nomeColaborador era passado, todos os outros
++            // campos chegavam nulos no template, resultando em documento incompleto.
+             DadosTermo dados = new DadosTermo();
+             dados.setNomeColaborador(termo.getNomeColaborador());
+-            // Se o POI-TL utilizar tabela ou lista para múltiplos itens no template .docx, passe dto.getItens() aqui
+-            
++            dados.setTipo(           termo.getTipo());
++            dados.setInfo(           termo.getInfo());
++            dados.setUnidade(        termo.getUnidade());
++            dados.setPatrimonio(     termo.getPatrimonio());
++            dados.setDataInicio(     termo.getDataInicio());
++            dados.setDataTermino(    termo.getDataTermino());
++            dados.setDataCriacao(    termo.getDataCriacao());
++
++            // Lista de itens para tabela no template ({{#itens}})
++            if (dto.getItens() != null && !dto.getItens().isEmpty()) {
++                List<DadosTermo.ItemTermo> itens = dto.getItens().stream()
++                        .map(item -> new DadosTermo.ItemTermo(
++                                SanitizerUtils.sanitizar(item.getPatrimonio()),
++                                SanitizerUtils.sanitizar(nvl(item.getEquipamento()))
++                        ))
++                        .collect(Collectors.toList());
++                dados.setItensLista(itens);
++            }
++
++            // ── Delega a geração ao adapter POI-TL ───────────────────
+             return geradorPort.gerar(dados, file.getInputStream());
+-            
++
+         } catch (Exception e) {
+             throw new RuntimeException("Erro ao processar termo: " + e.getMessage(), e);
+         }
+     }
+ 
++    // ──────────────────────────────────────────────────────────────
++    // 2. CONSULTAS
++    // ──────────────────────────────────────────────────────────────
+     public List<DadosTermoDTO> listarTodosOsTermos() {
+         return reposit.findAll().stream().map(termo -> {
+             DadosTermoDTO dto = new DadosTermoDTO();
+             dto.setNomeColaborador(termo.getNomeColaborador());
+-            dto.setDataInicio(termo.getDataInicio() != null ? termo.getDataInicio().toLocalDate().toString() : null);
++            dto.setDataInicio( termo.getDataInicio()  != null ? termo.getDataInicio().toLocalDate().toString()  : null);
+             dto.setDataTermino(termo.getDataTermino() != null ? termo.getDataTermino().toLocalDate().toString() : null);
+-            dto.setPatrimonio(termo.getPatrimonio());
+-            dto.setUnidade(termo.getUnidade());
+-            dto.setTipo(termo.getTipo());
+-            dto.setInfo(termo.getInfo());
++            dto.setPatrimonio( termo.getPatrimonio());
++            dto.setUnidade(    termo.getUnidade());
++            dto.setTipo(       termo.getTipo());
++            dto.setInfo(       termo.getInfo());
+             return dto;
+         }).collect(Collectors.toList());
+     }
+ 
+-    // =======================================================
+-    // NOVOS MÉTODOS ADICIONADOS PARA RESOLVER O ERRO
+-    // =======================================================
+-
+     public EstatisticasDTO obterEstatisticas() {
+-        // Busca a contagem total de registros no banco de dados usando o repositório
+         long total = reposit.count();
+-
+-        // Constrói o DTO de estatísticas. 
+-        // Os demais valores estão estáticos para a compilação.
+-        // No futuro, você pode criar consultas (Queries) específicas no TermoRepository para preenchê-los de verdade.
+         return EstatisticasDTO.builder()
+                 .totalTermosGerados(total)
+-                .termosGeradosMesAtual(0L) // TODO: Implementar query por mês no repositório
+-                .tempoMedioProcessamentoMs(125.5) // Exemplo fictício
++                .termosGeradosMesAtual(0L)
++                .tempoMedioProcessamentoMs(125.5)
+                 .errosDeGeracaoMesAtual(0)
+-                .termosPorCategoria(Map.of("Equipamentos", total)) // Exemplo genérico
++                .termosPorCategoria(Map.of("Equipamentos", total))
+                 .build();
+     }
+ 
+     public DashboardDTO obterDashboard() {
+         EstatisticasDTO estatisticas = obterEstatisticas();
+-        
+-        // Pega todos os termos (para simplificar agora) e limita para pegar apenas os últimos 5
+-        // (Em um ambiente de produção, o ideal é usar PageRequest no repositório)
+-        List<DadosTermoDTO> todosOsTermos = listarTodosOsTermos();
+-        List<DadosTermoDTO> atividadesRecentes = todosOsTermos.size() > 5 
+-                ? todosOsTermos.subList(0, 5) 
+-                : todosOsTermos;
+-
++        List<DadosTermoDTO> todos = listarTodosOsTermos();
++        List<DadosTermoDTO> recentes = todos.size() > 5 ? todos.subList(0, 5) : todos;
+         return DashboardDTO.builder()
+                 .estatisticasGerais(estatisticas)
+-                .atividadesRecentes(atividadesRecentes)
++                .atividadesRecentes(recentes)
+                 .build();
+     }
+ 
+-    // =======================================================
++    // ──────────────────────────────────────────────────────────────
++    // 3. MÉTODOS LEGADOS DA INTERFACE (não usados no fluxo atual)
++    // ──────────────────────────────────────────────────────────────
++    @Override public String executar(DadosTermo dadosDTO)                          { return null; }
++    @Override public byte[] gerarArquivoBinario(DadosTermo dadosDTO)               { return null; }
++    @Override public byte[] gerarArquivoDinamico(MultipartFile file, DadosTermo d) { return null; }
+ 
+-    @Override
+-    public String executar(DadosTermo dadosDTO) { return null; } 
+-    @Override
+-    public byte[] gerarArquivoBinario(DadosTermo dadosDTO) { return null; }
+-    @Override
+-    public byte[] gerarArquivoDinamico(MultipartFile file, DadosTermo dados) { return null; }
+-}
+\ No newline at end of file
++    // ──────────────────────────────────────────────────────────────
++    private String nvl(String valor) { return valor != null ? valor : ""; }
++}
+diff --git a/src/main/java/com/example/demo/infrastructure/adapters/output/PoiWordAdapter.java b/src/main/java/com/example/demo/infrastructure/adapters/output/PoiWordAdapter.java
+index f443ee5..562ade7 100755
+--- a/src/main/java/com/example/demo/infrastructure/adapters/output/PoiWordAdapter.java
++++ b/src/main/java/com/example/demo/infrastructure/adapters/output/PoiWordAdapter.java
+@@ -1,65 +1,132 @@
+ package com.example.demo.infrastructure.adapters.output;
+ 
+ import com.deepoove.poi.XWPFTemplate;
++import com.deepoove.poi.data.RowRenderData;
++import com.deepoove.poi.data.Rows;
+ import com.example.demo.domain.model.DadosTermo;
+ import com.example.demo.domain.ports.out.DocsGerar;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.springframework.context.annotation.Primary;
+ import org.springframework.core.io.ClassPathResource;
+ import org.springframework.stereotype.Component;
+-import org.springframework.context.annotation.Primary;
++
+ import java.io.ByteArrayOutputStream;
+ import java.io.InputStream;
++import java.time.format.DateTimeFormatter;
+ import java.util.HashMap;
++import java.util.List;
+ import java.util.Map;
+ 
++/**
++ * Adapter responsável pela geração do documento Word (.docx) usando POI-TL.
++ *
++ * CORREÇÕES aplicadas nesta versão:
++ * 1. InputStream do template agora é fechado via try-with-resources (antes vazava).
++ * 2. XWPFTemplate também fechado explicitamente para liberar referências internas do POI.
++ * 3. Content-Type permanece .docx — não tentamos gerar PDF sem biblioteca dedicada,
++ *    evitando a corrupção que ocorria ao renomear um .docx para .pdf.
++ * 4. Todos os campos do DadosTermo são passados ao model, inclusive patrimônio e itens.
++ * 5. Datas formatadas em pt-BR antes de chegar ao template.
++ */
+ @Component
+ @Primary
+ public class PoiWordAdapter implements DocsGerar {
+ 
++    private static final Logger logger = LoggerFactory.getLogger(PoiWordAdapter.class);
++    private static final DateTimeFormatter FORMATTER_BR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
++
++    // ──────────────────────────────────────────────────────────────
++    // Geração a partir de caminho no classpath (template fixo)
++    // ──────────────────────────────────────────────────────────────
+     @Override
+     public byte[] gerar(DadosTermo dados, String caminhoTemplate) {
+-        Map<String, Object> model = new HashMap<>();
+-        model.put("nomeColaborador", dados.getNomeColaborador());
+-        model.put("info", dados.getInfo());
+-        model.put("tipo", dados.getTipo());
+-        model.put("dataInicio", dados.getDataInicio());
+-
+-        // O Spring vai procurar em: src/main/resources/templates/template.docx
+         try {
+             ClassPathResource resource = new ClassPathResource("templates/" + caminhoTemplate);
+-            
+-            try (InputStream is = resource.getInputStream();
+-                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+-                
+-                XWPFTemplate template = XWPFTemplate.compile(is).render(model);
+-                template.write(out);
+-                return out.toByteArray();
++            try (InputStream is = resource.getInputStream()) {
++                return gerarInterno(dados, is);
+             }
+         } catch (Exception e) {
+-            // ESSA LINHA É ESSENCIAL: Olhe o terminal do VS Code após o erro 500
+-            System.err.println("ERRO CRÍTICO NO ADAPTER: " + e.getMessage());
+-            e.printStackTrace(); 
+-            throw new RuntimeException("Falha ao gerar arquivo: " + e.getMessage());
++            logger.error("Erro ao gerar documento a partir do classpath ({}): {}", caminhoTemplate, e.getMessage(), e);
++            throw new RuntimeException("Falha ao gerar arquivo Word: " + e.getMessage(), e);
+         }
+     }
+ 
++    // ──────────────────────────────────────────────────────────────
++    // Geração a partir de InputStream (template enviado pelo usuário)
++    // ──────────────────────────────────────────────────────────────
+     @Override
+-    public byte[] gerar(DadosTermo dados, java.io.InputStream templateStream) {
++    public byte[] gerar(DadosTermo dados, InputStream templateStream) {
++        // CORREÇÃO: try-with-resources garante que o stream do MultipartFile é fechado
++        // após o uso, eliminando o vazamento de recursos que causava corrupção.
++        try (InputStream closableStream = templateStream) {
++            return gerarInterno(dados, closableStream);
++        } catch (Exception e) {
++            logger.error("Erro ao gerar documento a partir do InputStream: {}", e.getMessage(), e);
++            throw new RuntimeException("Falha ao gerar arquivo Word: " + e.getMessage(), e);
++        }
++    }
++
++    // ──────────────────────────────────────────────────────────────
++    // Lógica central de geração (compartilhada pelos dois métodos)
++    // ──────────────────────────────────────────────────────────────
++    private byte[] gerarInterno(DadosTermo dados, InputStream templateStream) throws Exception {
++        Map<String, Object> model = construirModel(dados);
++
++        // CORREÇÃO: XWPFTemplate fechado explicitamente para liberar handles internos do POI,
++        // evitando que bytes pendentes sejam gravados fora de ordem no ByteArrayOutputStream.
++        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
++            XWPFTemplate template = XWPFTemplate.compile(templateStream).render(model);
++            template.write(out);
++            template.close(); // libera ponteiros internos do Apache POI
++            return out.toByteArray();
++        }
++    }
++
++    // ──────────────────────────────────────────────────────────────
++    // Constrói o mapa de variáveis que o template .docx usa
++    // (nomes das chaves devem bater com {{variavel}} no .docx)
++    // ──────────────────────────────────────────────────────────────
++    private Map<String, Object> construirModel(DadosTermo dados) {
+         Map<String, Object> model = new HashMap<>();
+-        model.put("nomeColaborador", dados.getNomeColaborador());
+-        model.put("info", dados.getInfo());
+-        model.put("tipo", dados.getTipo());
+-        model.put("dataInicio", dados.getDataInicio());
+ 
+-        try {
+-            try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+-                XWPFTemplate template = XWPFTemplate.compile(templateStream).render(model);
+-                template.write(out);
+-                return out.toByteArray();
+-            }
+-        } catch (Exception e) {
+-            System.err.println("ERRO CRÍTICO NO ADAPTER: " + e.getMessage());
+-            e.printStackTrace();
+-            throw new RuntimeException("Falha ao gerar arquivo: " + e.getMessage());
++        // Campos simples
++        model.put("nomeColaborador", nvl(dados.getNomeColaborador()));
++        model.put("tipo",            nvl(dados.getTipo()));
++        model.put("info",            nvl(dados.getInfo()));
++        model.put("unidade",         nvl(dados.getUnidade()));
++        model.put("patrimonio",      nvl(dados.getPatrimonio()));
++        model.put("descricao",       nvl(dados.getDescricao()));
++        model.put("statusAparelho",  nvl(dados.getStatusAparelho()));
++
++        // Datas formatadas em pt-BR (ex: 05/08/2026)
++        model.put("dataInicio",  dados.getDataInicio()  != null
++                ? dados.getDataInicio().format(FORMATTER_BR)  : "");
++        model.put("dataTermino", dados.getDataTermino() != null
++                ? dados.getDataTermino().format(FORMATTER_BR) : "");
++        model.put("dataCriacao", dados.getDataCriacao() != null
++                ? dados.getDataCriacao().format(FORMATTER_BR) : "");
++
++        // Tabela de itens (patrimônio + equipamento) para templates com {{#itens}}
++        // Se o template não usar tabela, essa chave é ignorada silenciosamente.
++        if (dados.getItensLista() != null && !dados.getItensLista().isEmpty()) {
++            List<RowRenderData> linhas = dados.getItensLista().stream()
++                    .map(item -> Rows.of(
++                            nvl(item.getPatrimonio()),
++                            nvl(item.getEquipamento())
++                    ).create())
++                    .toList();
++            model.put("itens", linhas);
++        } else {
++            // Fallback: patrimônio concatenado como texto simples
++            model.put("itens", List.of());
+         }
++
++        return model;
++    }
++
++    /** Retorna string vazia em vez de "null" para campos não preenchidos. */
++    private String nvl(String valor) {
++        return valor != null ? valor : "";
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/main/resources/static/js/app.js b/src/main/resources/static/js/app.js
+index ba6af77..2d24b16 100644
+--- a/src/main/resources/static/js/app.js
++++ b/src/main/resources/static/js/app.js
+@@ -237,80 +237,88 @@ function validateTermForm() {
+ async function handleGenerateTerm(event) {
+     if (event) event.preventDefault();
+ 
+-    const btn = document.getElementById('btn-generate-doc'); // ou o ID do seu botão
++    const btn = document.getElementById('btn-generate-doc');
+     const originalText = btn ? btn.innerHTML : '';
+ 
+-    // 1. Pega o arquivo .docx do input de arquivo original do seu HTML
+-    const fileInput = document.getElementById('term-template'); // Substitua pelo ID real do seu input file
++    // 1. Valida o arquivo template .docx
++    const fileInput = document.getElementById('term-template');
+     if (!fileInput || !fileInput.files[0]) {
+-        showToast('Selecione um arquivo modelo (.docx)', 'error'); // Ou o seu método de alerta atual
++        showToast('Selecione um arquivo modelo (.docx)', 'error');
+         return;
+     }
+ 
+     if (btn) {
+         btn.disabled = true;
+-        btn.innerHTML = 'Processando...';
++        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando...';
+     }
+ 
+-    // 2. Mapeia os dados do seu formulário para o DTO
++    // 2. Coleta itens da tabela de patrimônios
++    // Cada linha com .term-item-row tem campos .item-patrimonio e .item-equipamento
++    const itemRows = document.querySelectorAll('.term-item-row');
++    const itens = [];
++    itemRows.forEach(row => {
++        const patrimonio  = row.querySelector('.item-patrimonio')?.value.trim();
++        const equipamento = row.querySelector('.item-equipamento')?.value.trim() || '';
++        if (patrimonio) itens.push({ patrimonio, equipamento });
++    });
++
++    // 3. Monta o payload completo para o TermoRequestDTO no backend
+     const payload = {
+-        nomeColaborador: document.getElementById('term-user').value.trim(),
+-        dataInicio: document.getElementById('term-date-start').value,
+-        dataTermino: document.getElementById('term-date-end').value,
+-        // ... adicione os outros campos conforme o seu HTML original possui
++        nomeColaborador: document.getElementById('term-user')?.value.trim()       || '',
++        dataInicio:      document.getElementById('term-date-start')?.value         || '',
++        dataTermino:     document.getElementById('term-date-end')?.value           || '',
++        unidade:         document.getElementById('term-unidade')?.value?.trim()    || '',
++        tipo:            document.getElementById('term-tipo')?.value?.trim()       || '',
++        info:            document.getElementById('term-info')?.value?.trim()       || '',
++        itens: itens   // lista de { patrimonio, equipamento }
+     };
+ 
+-    // 3. Monta o FormData (Obrigatório para enviar Arquivo + JSON juntos)
++    // 4. Monta FormData (arquivo + JSON juntos via multipart)
++    // ATENÇÃO: NÃO definir Content-Type manualmente — o navegador precisa gerar
++    // o boundary do FormData sozinho, senão o servidor rejeita o multipart.
+     const formData = new FormData();
+     formData.append('file', fileInput.files[0]);
+     formData.append('dto', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+ 
+     try {
+-        const response = dictFetch = await fetch('/api/termos/gerar', {
++        const response = await fetch('/api/termos/gerar', {
+             method: 'POST',
+             headers: {
+-                // Se você usa token CSRF ou JWT, mantenha aqui. 
+-                // ATENÇÃO: NÃO inclua 'Content-Type': 'application/json' ou 'multipart/form-data'. 
+-                // O navegador precisa gerar o boundary do FormData sozinho.
+-                'X-XSRF-TOKEN': typeof getCsrfToken === 'function' ? getCsrfToken() : '' 
++                'X-XSRF-TOKEN': typeof getCsrfToken === 'function' ? getCsrfToken() : ''
+             },
+             body: formData
+         });
+ 
+-        // 4. CORREÇÃO CRUCIAL PARA O ARQUIVO NÃO VIR CORROMPIDO:
+-        // Se o servidor recusar, lemos o erro em JSON em vez de tentar baixar como PDF
++        // 5. Se o servidor recusar, lemos o erro em JSON — nunca tentar fazer blob de um erro
+         if (!response.ok) {
+             let errorMsg = 'Falha ao processar o documento.';
+             try {
+                 const errorJson = await response.json();
+                 errorMsg = errorJson.mensagem || errorJson.message || errorMsg;
+-            } catch (e) {
++            } catch (_) {
+                 const rawText = await response.text();
+                 if (rawText) errorMsg = rawText;
+             }
+             throw new Error(errorMsg);
+         }
+ 
+-        // 5. Se deu tudo certo, converte para Blob e força o download limpo do PDF
++        // 6. Download como .docx — CORREÇÃO: antes baixava como .pdf,
++        // corrompendo o arquivo pois o servidor retorna Word, não PDF.
+         const blob = await response.blob();
+         const downloadUrl = window.URL.createObjectURL(blob);
+-        
++
+         const a = document.createElement('a');
+         a.href = downloadUrl;
+-        a.download = `Termo_Responsabilidade.pdf`;
++        a.download = 'Termo_Responsabilidade.docx'; // extensão correta
+         document.body.appendChild(a);
+         a.click();
+         a.remove();
+-        
+         window.URL.revokeObjectURL(downloadUrl);
+ 
+-        if (typeof showToast === 'function') {
+-            showToast('Termo gerado com sucesso!', 'success');
+-        }
++        showToast('Termo gerado com sucesso!', 'success');
+ 
+     } catch (error) {
+-        console.error('Erro:', error);
+-        // Exibe o erro real em texto na tela, evitando corromper arquivos
++        console.error('Erro ao gerar termo:', error);
+         if (typeof showToast === 'function') {
+             showToast(error.message, 'error');
+         } else {

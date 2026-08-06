@@ -1,11 +1,11 @@
 package com.example.demo.domain.model;
 
 import jakarta.persistence.*;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
 
 @Getter
 @Setter
@@ -26,12 +26,13 @@ public class UsuarioEntity {
     @Column(nullable = false, unique = true)
     private String email;
 
-    // CORREÇÃO: O hash da senha é explicitamente ocultado de logs e comparações
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     @Column(nullable = false)
     private String senha;
 
+    // CORREÇÃO CRÍTICA: Força o JPA a ler/gravar o Enum como texto (VARCHAR)
     @Enumerated(EnumType.STRING)
+    @Column(name = "role")
     private UsuarioRole role;
 }

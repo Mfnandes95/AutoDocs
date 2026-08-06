@@ -1,21 +1,21 @@
 package com.example.demo.infrastructure.security;
 
 import com.example.demo.domain.model.UsuarioEntity;
+import com.example.demo.domain.model.UsuarioRole;
 import com.example.demo.infrastructure.repository.UserRepository;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.password.PasswordEncoder; // Adicionado
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AuthService implements UserDetailsService {
 
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder; // Adicionado para comparar os hashes BCrypt
+    private final PasswordEncoder passwordEncoder;
 
-    // Injetando ambos os beans via construtor
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -27,27 +27,31 @@ public class AuthService implements UserDetailsService {
         UsuarioEntity usuario = userRepository.findByEmail(username)
                 .orElseThrow(() -> new UsernameNotFoundException("E-mail não encontrado: " + username));
 
+        // Obtém o nome da constante do Enum ("GESTOR", "TECNICO"...) ou assume "COLABORADOR" se nulo
+        String roleName = (usuario.getRole() != null) 
+                ? usuario.getRole().name() 
+                : UsuarioRole.COLABORADOR.name();
+
         return User.builder()
-        .username(usuario.getEmail())
-        .password(usuario.getSenha())
-        .roles(usuario.getRole().name())
-        .build();
+                .username(usuario.getEmail())
+                .password(usuario.getSenha())
+                .roles(roleName) // O Spring adiciona automaticamente o prefixo "ROLE_"
+                .build();
     }
 
-    // O MÉTODO QUE ESTAVA FALTANDO: Chamado pelo seu AuthController manual
+    /**
+     * Autenticação manual para controllers customizados.
+     */
     public UsuarioEntity autenticar(String email, String senhaDigitada) {
         System.out.println(">>> Verificando credenciais no AuthService para: " + email);
         
-        // 1. Busca o usuário usando o seu UserRepository
         UsuarioEntity usuario = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("E-mail não encontrado"));
 
-        // 2. Compara a senha digitada em texto puro com o hash BCrypt do banco
         if (!passwordEncoder.matches(senhaDigitada, usuario.getSenha())) {
             throw new RuntimeException("Senha incorreta");
         }
 
-        // 3. Se a senha bater, retorna o usuário para o Controller montar o JSON
         return usuario;
     }
 }
