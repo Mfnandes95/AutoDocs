@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -22,6 +23,15 @@ public class DashboardDTO {
     // (Opcional) Pode conter dados para gerar um gráfico de barras no front-end
     // Ex: "2026-05" -> 45 termos, "2026-06" -> 60 termos
     private List<GraficoEvolucaoDTO> graficoEvolucaoMensal;
+
+    // Quantidade de termos ativos agrupados por unidade/escritório (gráfico "por escritório")
+    private Map<String, Long> porUnidade;
+
+    // Quantidade de termos ativos agrupados por tipo de equipamento (gráfico "por categoria")
+    private Map<String, Long> porTipo;
+
+    // Termos cuja dataTermino cai nos próximos 7 dias (KPI "a vencer")
+    private Long totalAVencer;
 
     @Data
     @Builder

@@ -174,7 +174,7 @@ async function loadDashboardCharts() {
     let equipmentValues = [];
 
     try {
-        const response = await fetch('/api/dashboard/metrics', {
+        const response = await fetch('/api/termos/dashboard', {
             method: 'GET',
             credentials: 'include',
             headers: {
@@ -182,21 +182,24 @@ async function loadDashboardCharts() {
             }
         });
         if (response.ok) {
-            const data = await response.json();
-            officeLabels = data.offices?.map(o => o.nome) || [];
-            officeValues = data.offices?.map(o => o.qtd) || [];
-            equipmentLabels = data.equipments?.map(e => e.categoria) || [];
-            equipmentValues = data.equipments?.map(e => e.qtd) || [];
+            // O backend envolve a resposta em ApiResponse: { sucesso, mensagem, dados }
+            const envelope = await response.json();
+            const data = envelope?.dados || {};
+
+            officeLabels = Object.keys(data.porUnidade || {});
+            officeValues = Object.values(data.porUnidade || {});
+            equipmentLabels = Object.keys(data.porTipo || {});
+            equipmentValues = Object.values(data.porTipo || {});
 
             const totalBorrowed = document.getElementById('kpi-total-borrowed');
             const totalOffices = document.getElementById('kpi-total-offices');
             const totalTypes = document.getElementById('kpi-total-types');
             const expiringSoon = document.getElementById('kpi-expiring-soon');
 
-            if (totalBorrowed) totalBorrowed.innerText = data.totalEmprestimos || 0;
-            if (totalOffices) totalOffices.innerText = data.totalEscritorios || 0;
-            if (totalTypes) totalTypes.innerText = data.totalTipos || 0;
-            if (expiringSoon) expiringSoon.innerText = data.aVencer || 0;
+            if (totalBorrowed) totalBorrowed.innerText = data.estatisticasGerais?.totalTermosGerados || 0;
+            if (totalOffices) totalOffices.innerText = officeLabels.length;
+            if (totalTypes) totalTypes.innerText = equipmentLabels.length;
+            if (expiringSoon) expiringSoon.innerText = data.totalAVencer || 0;
         }
     } catch (e) {
         console.warn('Erro ao carregar métricas do dashboard:', e);
@@ -399,6 +402,11 @@ async function handleGenerateTerm(event) {
 
         showToast('Termo gerado com sucesso!', 'success');
 
+        // Sem isso, o dashboard só é recarregado no login ou ao clicar
+        // manualmente na aba Dashboard — gerar um termo nunca disparava
+        // um refresh dos números/gráficos.
+        loadDashboardCharts();
+
     } catch (error) {
         console.error('Erro ao gerar termo:', error);
         showToast(error.message, 'error');
@@ -429,7 +437,7 @@ async function handleSaveInventoryItem(event) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
 
     try {
-        const response = await fetch('/api/inventario', {
+        const response = await fetch('/equipamentos', {
             method: 'POST',
             credentials: 'include',
             headers: {

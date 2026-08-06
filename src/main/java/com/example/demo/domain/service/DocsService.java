@@ -112,12 +112,13 @@ public class DocsService implements GerarDocumentoUseCase {
 
     public EstatisticasDTO obterEstatisticas() {
         long total = reposit.count();
+        Map<String, Long> porTipo = calcularPorTipo();
         return EstatisticasDTO.builder()
                 .totalTermosGerados(total)
                 .termosGeradosMesAtual(0L)
                 .tempoMedioProcessamentoMs(125.5)
                 .errosDeGeracaoMesAtual(0)
-                .termosPorCategoria(Map.of("Equipamentos", total))
+                .termosPorCategoria(porTipo)
                 .build();
     }
 
@@ -125,10 +126,36 @@ public class DocsService implements GerarDocumentoUseCase {
         EstatisticasDTO estatisticas = obterEstatisticas();
         List<DadosTermoDTO> todos = listarTodosOsTermos();
         List<DadosTermoDTO> recentes = todos.size() > 5 ? todos.subList(0, 5) : todos;
+
+        List<TermoEntity> entidades = reposit.findAll();
+
+        Map<String, Long> porUnidade = entidades.stream()
+                .collect(Collectors.groupingBy(
+                        t -> (t.getUnidade() == null || t.getUnidade().isBlank()) ? "Não informado" : t.getUnidade(),
+                        Collectors.counting()));
+
+        LocalDateTime agora = LocalDateTime.now();
+        LocalDateTime limite = agora.plusDays(7);
+        long aVencer = entidades.stream()
+                .filter(t -> t.getDataTermino() != null
+                        && !t.getDataTermino().isBefore(agora)
+                        && !t.getDataTermino().isAfter(limite))
+                .count();
+
         return DashboardDTO.builder()
                 .estatisticasGerais(estatisticas)
                 .atividadesRecentes(recentes)
+                .porUnidade(porUnidade)
+                .porTipo(estatisticas.getTermosPorCategoria())
+                .totalAVencer(aVencer)
                 .build();
+    }
+
+    private Map<String, Long> calcularPorTipo() {
+        return reposit.findAll().stream()
+                .collect(Collectors.groupingBy(
+                        t -> (t.getTipo() == null || t.getTipo().isBlank()) ? "Não informado" : t.getTipo(),
+                        Collectors.counting()));
     }
 
     @Override public String executar(DadosTermo dadosDTO)                          { return null; }
