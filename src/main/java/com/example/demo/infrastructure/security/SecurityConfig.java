@@ -43,14 +43,21 @@ public class SecurityConfig {
             // 3. Regras de Autorização de Rotas
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
-                    "/", 
-                    "/index.html", 
-                    "/css/**", 
-                    "/js/**", 
-                    "/assets/**", 
-                    "/favicon.ico", 
-                    "/login", 
-                    "/logout"
+                    "/",
+                    "/index.html",
+                    "/css/**",
+                    "/js/**",
+                    "/assets/**",
+                    "/favicon.ico",
+                    "/login",
+                    "/logout",
+                    // CORREÇÃO CRÍTICA: sem isso, POST /register (cadastro de
+                    // usuário novo, por definição feito por alguém ainda
+                    // anônimo) caía em anyRequest().authenticated() e nunca
+                    // chegava no CadastroController — nenhuma conta era
+                    // criada de verdade, então nenhum login funcionava.
+                    "/register",
+                    "/register.html"
                 ).permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().authenticated()

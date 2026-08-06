@@ -53,6 +53,9 @@ public class DadosTermo {
     @JsonProperty("id_equipamento")
     private String idEquipamento;
 
+    @JsonProperty("equipamento")
+    private String equipamento;
+
     @JsonProperty("descricao")
     private String descricao;
 

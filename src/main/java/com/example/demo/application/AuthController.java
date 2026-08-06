@@ -6,32 +6,22 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class AuthController {
 
-    // Página Inicial / Index
+    // Página Inicial / Index — única SPA real do projeto.
     @GetMapping({"/", "/index", "/index.html"})
     public String indexPage() {
         return "index"; // Procura por templates/index.html
     }
 
-    // Autenticação
-    @GetMapping({"/login", "/login.html"})
-    public String loginPage() {
-        return "login"; // Procura por templates/login.html
-    }
-
-    @GetMapping({"/register", "/register.html"})
-    public String registerPage() {
-        return "register"; // Procura por templates/register.html
-    }
-
-    // Dashboard
-    @GetMapping({"/dashboard", "/dashboard.html"})
-    public String dashboardPage() {
-        return "dashboard"; // Procura por templates/dashboard.html
-    }
-
-    // Inventário
-    @GetMapping({"/inventario", "/inventario.html"})
-    public String inventarioPage() {
-        return "inventario"; // Procura por templates/inventario.html
+    // As rotas abaixo NÃO têm templates próprios (login.html, register.html,
+    // dashboard.html e inventario.html nunca existiram em templates/) —
+    // acessá-las diretamente pela URL gerava erro 500 do Thymeleaf
+    // (TemplateInputException). A navegação real acontece toda dentro da
+    // index.html via JS (app.js troca as seções #view-auth / #view-app).
+    // Por isso essas URLs agora redirecionam para a SPA em vez de tentar
+    // renderizar uma view inexistente.
+    @GetMapping({"/login", "/login.html", "/register", "/register.html",
+                 "/dashboard", "/dashboard.html", "/inventario", "/inventario.html"})
+    public String redirectParaSpa() {
+        return "redirect:/index.html";
     }
 }

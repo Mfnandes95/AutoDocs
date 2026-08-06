@@ -45,16 +45,25 @@ public class DocsService implements GerarDocumentoUseCase {
             termo.setDataTermino( dto.getDataTermino().atStartOfDay());
             termo.setDataCriacao( LocalDateTime.now());
 
+            String equipamentosConcatenados = "";
+
             if (dto.getItens() != null && !dto.getItens().isEmpty()) {
+                // Extrai os patrimônios da lista
                 String patrimoniosConcatenados = dto.getItens().stream()
-                        .map(item -> SanitizerUtils.sanitizar(item.getPatrimonio())
-                                + (item.getEquipamento() != null
-                                    ? " (" + SanitizerUtils.sanitizar(item.getEquipamento()) + ")"
-                                    : ""))
+                        .map(item -> SanitizerUtils.sanitizar(item.getPatrimonio()))
                         .collect(Collectors.joining("; "));
                 termo.setPatrimonio(patrimoniosConcatenados);
+
+                // Extrai os equipamentos da lista
+                equipamentosConcatenados = dto.getItens().stream()
+                        .map(item -> SanitizerUtils.sanitizar(nvl(item.getEquipamento())))
+                        .collect(Collectors.joining("; "));
             } else {
+                // Caso seja enviado um patrimônio e equipamento único (fora de lista)
                 termo.setPatrimonio(SanitizerUtils.sanitizar(nvl(dto.getPatrimonio())));
+                
+                // Descomente a linha abaixo se o seu TermoRequestDTO também possuir getEquipamento() individual:
+                // equipamentosConcatenados = SanitizerUtils.sanitizar(nvl(dto.getEquipamento()));
             }
 
             reposit.save(termo);
@@ -65,6 +74,7 @@ public class DocsService implements GerarDocumentoUseCase {
             dados.setInfo(           termo.getInfo());
             dados.setUnidade(        termo.getUnidade());
             dados.setPatrimonio(     termo.getPatrimonio());
+            dados.setEquipamento(    equipamentosConcatenados); // <-- Atribuído corretamente aqui
             dados.setDataInicio(     termo.getDataInicio());
             dados.setDataTermino(    termo.getDataTermino());
             dados.setDataCriacao(    termo.getDataCriacao());

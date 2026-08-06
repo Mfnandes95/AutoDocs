@@ -67,6 +67,7 @@ public class PoiWordAdapter implements DocsGerar {
         model.put("info",            nvl(dados.getInfo()));
         model.put("unidade",         nvl(dados.getUnidade()));
         model.put("patrimonio",      nvl(dados.getPatrimonio()));
+        model.put("equipamento",     nvl(dados.getEquipamento()));
         model.put("descricao",       nvl(dados.getDescricao()));
         model.put("statusAparelho",  nvl(dados.getStatusAparelho()));
 

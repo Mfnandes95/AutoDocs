@@ -82,9 +82,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const emailInput = loginForm.querySelector('input[name="email"], input[name="username"], #login-email, #email');
             const passwordInput = loginForm.querySelector('input[name="password"], input[name="senha"], #login-password, #senha');
 
-            // Garante o trim() para remover caracteres invisíveis ou espaços extras
+            // O e-mail pode ser trimado com segurança (o backend normaliza
+            // e-mail da mesma forma no cadastro/login). A SENHA não deve ser
+            // trimada aqui: o cadastro não trima a senha antes de gerar o
+            // hash, então trimar só no login criaria uma senha "diferente"
+            // da que foi de fato cadastrada sempre que ela tiver espaço
+            // nas pontas — e o login falharia mesmo com a senha "correta".
             const emailValue = emailInput ? emailInput.value.trim() : '';
-            const passwordValue = passwordInput ? passwordInput.value.trim() : '';
+            const passwordValue = passwordInput ? passwordInput.value : '';
 
             // Monta os parâmetros exatamente com as chaves "email" e "password" configuradas no Spring Security
             const bodyParams = new URLSearchParams();
@@ -109,7 +114,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadDashboardCharts();
                     showToast('Login realizado com sucesso!', 'success');
                 } else {
-                    showToast('Usuário ou senha inválidos.', 'error');
+                    // O failureHandler do SecurityConfig devolve um JSON com a
+                    // mensagem real do erro (e-mail não encontrado, senha
+                    // incorreta, etc). Mostrar essa mensagem em vez de um
+                    // texto fixo evita mascarar a causa real (ex: 403 de CSRF
+                    // vs 401 de credencial inválida vs 500 do servidor).
+                    let mensagem = 'Usuário ou senha inválidos.';
+                    try {
+                        const corpo = await response.json();
+                        if (corpo?.mensagem) {
+                            mensagem = response.status === 401
+                                ? 'Usuário ou senha inválidos.'
+                                : corpo.mensagem;
+                        }
+                    } catch (_) {
+                        // resposta não era JSON (ex: erro 500 genérico) — mantém mensagem padrão
+                    }
+                    showToast(mensagem, 'error');
                 }
             } catch (error) {
                 console.error('Erro na requisição de login:', error);
