@@ -10,6 +10,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStream;
 import java.text.Normalizer;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class InventarioService {
@@ -107,10 +109,19 @@ public class InventarioService {
             if (colLocalizacao == -1) colLocalizacao = 2;
             if (colStatus == -1) colStatus = 3;
 
-            // 2. Processamento, sanitização e Upsert dos itens
+            // 2. Carrega todos os registros atuais em um Map em memória (O(1) de busca)
+            // Isso evita N queries no banco e previne duplicações na própria planilha
+            Map<String, InventarioEntity> cachePatrimonio = repository.findAll().stream()
+                    .collect(Collectors.toMap(
+                            InventarioEntity::getPatrimonio,
+                            entidade -> entidade,
+                            (existente, duplicado) -> existente
+                    ));
+
             int novosInseridos = 0;
             int atualizados = 0;
 
+            // 3. Processamento, sanitização e Upsert resiliente dos itens
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
@@ -122,13 +133,15 @@ public class InventarioService {
 
                 // Processa apenas se houver identificação mínima (Patrimônio e Nome)
                 if (!patrimonio.isBlank() && !nome.isBlank()) {
-                    boolean jaExiste = repository.findByPatrimonio(patrimonio).isPresent();
+                    boolean jaExiste = cachePatrimonio.containsKey(patrimonio);
 
-                    // Upsert: recupera a entidade existente para atualizar ou cria uma nova
-                    InventarioEntity inventario = repository.findByPatrimonio(patrimonio)
-                            .orElseGet(InventarioEntity::new);
+                    // Recupera do cache ou instancia uma nova entidade já registrada no cache
+                    InventarioEntity inventario = cachePatrimonio.computeIfAbsent(patrimonio, p -> {
+                        InventarioEntity novo = new InventarioEntity();
+                        novo.setPatrimonio(p);
+                        return novo;
+                    });
 
-                    inventario.setPatrimonio(patrimonio);
                     inventario.setNome(nome);
                     inventario.setLocalizacao(localizacao);
                     inventario.setStatus(status);

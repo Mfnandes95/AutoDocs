@@ -20,7 +20,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Arrays;
 import java.util.List;
 
 @RestController
@@ -31,11 +30,6 @@ public class DocsController {
 
     private static final MediaType MEDIA_TYPE_DOCX = MediaType.valueOf(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-
-    private static final List<String> ALLOWED_CONTENT_TYPES = Arrays.asList(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword"
-    );
 
     private final DocsService docsService;
 
@@ -50,14 +44,24 @@ public class DocsController {
             @Valid @RequestPart("dto") TermoRequestDTO dto,
             Authentication authentication) {
 
-        if (file == null || file.isEmpty() || !ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
-            logger.warn("Upload inválido pelo usuário: {}", authentication.getName());
+        String userName = (authentication != null) ? authentication.getName() : "Usuário Anônimo";
+
+        // Sanitização e validação resiliente do arquivo
+        if (file == null || file.isEmpty()) {
+            logger.warn("Upload de arquivo vazio ou nulo recebido de: {}", userName);
             return ResponseEntity.badRequest()
-                    .body(ApiResponse.erro("Arquivo inválido ou não suportado. Envie apenas documentos Word (.docx)."));
+                    .body(ApiResponse.erro("Selecione um arquivo de modelo (.docx) válido."));
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.toLowerCase().endsWith(".docx")) {
+            logger.warn("Formato de arquivo inválido enviado por {}: {}", userName, originalFilename);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.erro("Formato não suportado. Envie apenas modelos do Word (.docx)."));
         }
 
         try {
-            logger.info("Usuário {} iniciou geração de Termo de Responsabilidade.", authentication.getName());
+            logger.info("Iniciando geração de Termo de Responsabilidade para usuário: {}", userName);
 
             byte[] docxBytes = docsService.processarGeracao(file, dto);
 
@@ -72,13 +76,13 @@ public class DocsController {
             return new ResponseEntity<>(docxBytes, headers, HttpStatus.OK);
 
         } catch (IllegalArgumentException e) {
-            logger.warn("Validação ao gerar termo para {}: {}", authentication.getName(), e.getMessage());
+            logger.warn("Falha de validação nas regras de negócio para {}: {}", userName, e.getMessage());
             return ResponseEntity.badRequest().body(ApiResponse.erro(e.getMessage()));
 
         } catch (Exception e) {
-            logger.error("Erro interno ao gerar termo para {}: ", authentication.getName(), e);
+            logger.error("Erro crítico ao gerar termo para {}: ", userName, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.erro("Ocorreu um erro interno. Tente novamente mais tarde."));
+                    .body(ApiResponse.erro("Erro ao processar o documento Word. Verifique a estrutura do modelo enviado."));
         }
     }
 
@@ -86,14 +90,12 @@ public class DocsController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<?>> listarTodos(Authentication authentication) {
         try {
-            logger.info("Usuário {} listou todos os termos.", authentication.getName());
             List<DadosTermoDTO> lista = docsService.listarTodosOsTermos();
             return ResponseEntity.ok(ApiResponse.ok(lista));
         } catch (AccessDeniedException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.erro("Acesso negado."));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.erro("Acesso negado."));
         } catch (Exception e) {
-            logger.error("Erro ao listar termos para {}: ", authentication.getName(), e);
+            logger.error("Erro ao listar termos: ", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.erro("Falha ao recuperar a lista de termos."));
         }
@@ -106,7 +108,7 @@ public class DocsController {
             EstatisticasDTO estatisticas = docsService.obterEstatisticas();
             return ResponseEntity.ok(ApiResponse.ok(estatisticas));
         } catch (Exception e) {
-            logger.error("Erro ao obter estatísticas para {}: ", authentication.getName(), e);
+            logger.error("Erro ao obter estatísticas: ", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.erro("Falha ao obter estatísticas."));
         }
@@ -119,7 +121,7 @@ public class DocsController {
             DashboardDTO dashboard = docsService.obterDashboard();
             return ResponseEntity.ok(ApiResponse.ok(dashboard));
         } catch (Exception e) {
-            logger.error("Erro ao carregar dashboard para {}: ", authentication.getName(), e);
+            logger.error("Erro ao carregar dashboard: ", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.erro("Falha ao carregar os dados do dashboard."));
         }

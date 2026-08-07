@@ -310,17 +310,11 @@ window.handleGenerateTerm = async function(event) {
     if (event) event.preventDefault();
 
     const btn = document.getElementById('btn-generate-doc');
-    const originalText = btn ? btn.innerHTML : '';
-
     const fileInput = document.getElementById('term-template');
+
     if (!fileInput || !fileInput.files[0]) {
         showToast('Selecione um arquivo modelo (.docx)', 'error');
         return;
-    }
-
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando...';
     }
 
     const itemRows = document.querySelectorAll('.term-item-row');
@@ -331,13 +325,15 @@ window.handleGenerateTerm = async function(event) {
         if (patrimonio) itens.push({ patrimonio, equipamento });
     });
 
+    // Mapeamento perfeitamente alinhado com o DTO do backend (incluindo nomeColaborador)
     const payload = {
-        nomeColaborador: document.getElementById('term-user')?.value.trim()       || '',
-        dataInicio:      document.getElementById('term-date-start')?.value         || '',
-        dataTermino:     document.getElementById('term-date-end')?.value           || '',
-        unidade:         document.getElementById('term-unidade')?.value?.trim()    || '',
-        tipo:            document.getElementById('term-tipo')?.value?.trim()       || '',
-        info:            document.getElementById('term-info')?.value?.trim()       || '',
+        nomeColaborador: document.getElementById('term-user')?.value.trim()    || '',
+        colaborador:     document.getElementById('term-user')?.value.trim()    || '',
+        dataInicio:      document.getElementById('term-date-start')?.value     || '',
+        dataTermino:     document.getElementById('term-date-end')?.value       || '',
+        unidade:         document.getElementById('term-unidade')?.value?.trim() || '',
+        tipo:            document.getElementById('term-tipo')?.value?.trim()    || '',
+        observacoes:     document.getElementById('term-info')?.value?.trim()   || '',
         itens: itens
     };
 
@@ -346,6 +342,11 @@ window.handleGenerateTerm = async function(event) {
     formData.append('dto', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
 
     try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando...';
+        }
+
         const response = await fetch('/api/termos/gerar', {
             method: 'POST',
             credentials: 'include',
@@ -353,15 +354,14 @@ window.handleGenerateTerm = async function(event) {
             body: formData
         });
 
+        // Caso a resposta não seja 2xx, tenta ler a mensagem retornada no JSON
         if (!response.ok) {
-            let errorMsg = 'Falha ao processar o documento.';
-            try {
-                const errorJson = await response.json();
-                errorMsg = errorJson.mensagem || errorJson.message || errorMsg;
-            } catch (_) {}
+            const errorJson = await response.json().catch(() => null);
+            const errorMsg = errorJson?.mensagem || errorJson?.message || `Erro ${response.status} ao processar o documento.`;
             throw new Error(errorMsg);
         }
 
+        // Se deu certo, obtém o arquivo como Blob e faz o download
         const blob = await response.blob();
         const downloadUrl = window.URL.createObjectURL(blob);
 
@@ -374,7 +374,7 @@ window.handleGenerateTerm = async function(event) {
         window.URL.revokeObjectURL(downloadUrl);
 
         showToast('Termo gerado com sucesso!', 'success');
-        loadDashboardCharts();
+        if (typeof loadDashboardCharts === 'function') loadDashboardCharts();
 
     } catch (error) {
         console.error('Erro ao gerar termo:', error);
@@ -382,7 +382,7 @@ window.handleGenerateTerm = async function(event) {
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = originalText;
+            btn.innerHTML = '<i class="fas fa-file-word"></i> Gerar Documento';
         }
     }
 };
@@ -410,7 +410,7 @@ window.loadInventoryList = async function() {
             return;
         }
 
-        // Adiciona preservando a ordem do banco
+        // Adiciona preservando a ordem vinda da consulta do banco
         itens.forEach(item => addInventoryRowToTable(item, true));
     } catch (e) {
         console.warn('Erro ao carregar lista de inventário:', e);
@@ -451,7 +451,7 @@ window.handleSaveInventoryItem = async function(event) {
 
         const savedItem = await response.json().catch(() => payload);
 
-        addInventoryRowToTable(savedItem, false); // Insere no topo
+        addInventoryRowToTable(savedItem, false); // Insere no topo da tabela
         showToast('Ativo cadastrado com sucesso!', 'success');
         document.getElementById('form-inventory-item')?.reset();
         closeModal('modal-item');
