@@ -199,7 +199,18 @@
 
                         <div class="form-group">
                             <label for="term-user">Nome do Colaborador / Responsável</label>
-                            <input type="text" id="term-user" class="form-control" placeholder="Digite o nome completo" required oninput="validateTermForm()">
+                            <div style="display:flex; gap:8px; align-items:flex-start;">
+                                <input type="text" id="term-user" class="form-control" list="colaboradores-datalist"
+                                       placeholder="Digite ou selecione o nome" required oninput="validateTermForm()" style="flex:1;">
+                                <button type="button" class="btn-secondary" title="Importar planilha de colaboradores"
+                                        onclick="document.getElementById('colaboradores-import-input').click()">
+                                    <i class="fas fa-file-import"></i>
+                                </button>
+                                <input type="file" id="colaboradores-import-input" accept=".xlsx,.xls,.csv" style="display:none">
+                            </div>
+                            <datalist id="colaboradores-datalist"></datalist>
+                            <!-- O nome digitado não precisa estar na lista: quem não foi
+                                 importado ainda pode ser digitado livremente, como sempre. -->
                         </div>
 
                         <div class="form-row">
@@ -226,16 +237,20 @@
                                 <!-- Linha 1 padrão (inicial) -->
                                 <div class="term-item-row form-row align-items-center mb-2" style="display: flex; gap: 10px; margin-bottom: 8px;">
                                     <div class="form-group flex-grow-1 mb-0" style="flex: 1;">
-                                        <input type="text" class="form-control item-patrimonio" placeholder="Nº Patrimônio / Tag" required oninput="validateTermForm()">
+                                        <input type="text" class="form-control item-patrimonio" list="equipamentos-patrimonio-datalist" placeholder="Nº Patrimônio / Tag" required oninput="validateTermForm()">
                                     </div>
                                     <div class="form-group flex-grow-1 mb-0" style="flex: 1;">
-                                        <input type="text" class="form-control item-equipamento" placeholder="Nome / Descrição do equipamento" oninput="validateTermForm()">
+                                        <input type="text" class="form-control item-equipamento" list="equipamentos-nome-datalist" placeholder="Nome / Descrição do equipamento" oninput="validateTermForm()">
                                     </div>
                                     <button type="button" class="action-btn delete btn-remove-item" onclick="removeTermItemRow(this)" title="Remover item">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
                             </div>
+                            <!-- Populados a partir do mesmo inventário (tb_inventario) importado
+                                 na aba Inventário de TI — ver loadEquipamentosDatalist() em app.js -->
+                            <datalist id="equipamentos-patrimonio-datalist"></datalist>
+                            <datalist id="equipamentos-nome-datalist"></datalist>
                         </div>
 
                         <button type="submit" id="btn-generate-doc" class="btn-primary mt-4 w-100" disabled>

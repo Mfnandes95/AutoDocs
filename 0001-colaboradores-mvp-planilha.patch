@@ -1,0 +1,521 @@
+From f19b02de4f6185e1bc6aa7336a7d14956e2deec3 Mon Sep 17 00:00:00 2001
+From: "Claude (auditoria AutoDocs)" <assistente@local>
+Date: Fri, 7 Aug 2026 18:24:58 +0000
+Subject: [PATCH] =?UTF-8?q?feat(colaboradores):=20MVP=20de=20sele=C3=A7?=
+ =?UTF-8?q?=C3=A3o=20de=20colaborador=20por=20planilha?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Objetivo final é puxar de AD/RH, mas isso hoje é rede interna (não
+alcançável pela Railway). Pra experimentar agora, o fluxo é o mesmo
+padrão já usado no inventário: importar planilha -> tabela própria
+-> autocomplete no formulário de geração de termo. Trocar a fonte
+por AD/RH depois é isolado ao ColaboradorService, sem mexer no
+resto do fluxo.
+
+- ColaboradorEntity/ColaboradorRepository: tabela tb_colaborador
+  (nome único + matricula/setor opcionais, não usados ainda).
+- ColaboradorService: importação .xlsx/.xls/.csv com mapeamento de
+  cabeçalho case/acento-insensitive e upsert por nome (mesmo padrão
+  do InventarioService: cache em memória, evita N queries).
+- ColaboradorController: GET /api/colaboradores (lista, popula o
+  autocomplete), GET /api/colaboradores/buscar?q=, POST
+  /api/colaboradores/importar.
+- index.html: campo 'Nome do Colaborador' agora tem autocomplete
+  nativo (datalist) mas continua aceitando texto livre — colaborador
+  fora da planilha ainda pode ser digitado normalmente. Botão de
+  importar planilha ao lado do campo.
+- app.js: loadColaboradoresList() (popula o datalist) e
+  handleImportColaboradores(), disparados ao abrir a aba 'Gerar
+  Termo' e após a importação, respectivamente.
+---
+ .../application/ColaboradorController.java    |  51 ++++
+ .../demo/domain/model/ColaboradorEntity.java  |  40 ++++
+ .../domain/service/ColaboradorService.java    | 219 ++++++++++++++++++
+ .../repository/ColaboradorRepository.java     |  16 ++
+ src/main/resources/static/js/app.js           |  68 ++++++
+ src/main/resources/templates/index.html       |  13 +-
+ 6 files changed, 406 insertions(+), 1 deletion(-)
+ create mode 100644 src/main/java/com/example/demo/application/ColaboradorController.java
+ create mode 100644 src/main/java/com/example/demo/domain/model/ColaboradorEntity.java
+ create mode 100644 src/main/java/com/example/demo/domain/service/ColaboradorService.java
+ create mode 100644 src/main/java/com/example/demo/infrastructure/repository/ColaboradorRepository.java
+
+diff --git a/src/main/java/com/example/demo/application/ColaboradorController.java b/src/main/java/com/example/demo/application/ColaboradorController.java
+new file mode 100644
+index 0000000..85248df
+--- /dev/null
++++ b/src/main/java/com/example/demo/application/ColaboradorController.java
+@@ -0,0 +1,51 @@
++package com.example.demo.application;
++
++import com.example.demo.domain.model.ColaboradorEntity;
++import com.example.demo.domain.service.ColaboradorService;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.*;
++import org.springframework.web.multipart.MultipartFile;
++
++import java.util.List;
++import java.util.Map;
++
++@RestController
++@RequestMapping("/api/colaboradores")
++public class ColaboradorController {
++
++    private final ColaboradorService colaboradorService;
++
++    public ColaboradorController(ColaboradorService colaboradorService) {
++        this.colaboradorService = colaboradorService;
++    }
++
++    // GET /api/colaboradores - lista completa, usada para popular o
++    // autocomplete no formulário de geração de termo.
++    @GetMapping
++    public ResponseEntity<List<ColaboradorEntity>> listar() {
++        return ResponseEntity.ok(colaboradorService.listarTodos());
++    }
++
++    @GetMapping("/buscar")
++    public ResponseEntity<List<ColaboradorEntity>> buscar(@RequestParam String q) {
++        return ResponseEntity.ok(colaboradorService.buscar(q));
++    }
++
++    // POST /api/colaboradores/importar - planilha (.xlsx/.xls/.csv) com
++    // colunas nome (obrigatória), matricula e setor (opcionais).
++    @PostMapping("/importar")
++    public ResponseEntity<Map<String, Object>> importarPlanilha(@RequestParam("file") MultipartFile file) {
++        try {
++            String mensagem = colaboradorService.importarPlanilha(file);
++            return ResponseEntity.ok(Map.of(
++                    "sucesso", true,
++                    "mensagem", mensagem
++            ));
++        } catch (Exception e) {
++            return ResponseEntity.badRequest().body(Map.of(
++                    "sucesso", false,
++                    "mensagem", "Erro na importação: " + e.getMessage()
++            ));
++        }
++    }
++}
+diff --git a/src/main/java/com/example/demo/domain/model/ColaboradorEntity.java b/src/main/java/com/example/demo/domain/model/ColaboradorEntity.java
+new file mode 100644
+index 0000000..c47c87f
+--- /dev/null
++++ b/src/main/java/com/example/demo/domain/model/ColaboradorEntity.java
+@@ -0,0 +1,40 @@
++package com.example.demo.domain.model;
++
++import jakarta.persistence.*;
++import lombok.AllArgsConstructor;
++import lombok.Data;
++import lombok.NoArgsConstructor;
++
++/**
++ * Colaborador importado por planilha, usado para preencher o campo
++ * "Nome do Colaborador / Responsável" na geração de termos por seleção
++ * em vez de digitação livre.
++ *
++ * MVP: só o nome é usado de fato hoje. Setor/matrícula ficam como
++ * colunas opcionais já suportadas na importação, prontas pra quando o
++ * fluxo evoluir pra puxar de AD/RH — a ideia é que a origem dos dados
++ * (planilha hoje, AD/RH depois) mude sem precisar mexer no restante do
++ * sistema, que só enxerga esta tabela.
++ */
++@Entity
++@Table(name = "tb_colaborador")
++@Data
++@NoArgsConstructor
++@AllArgsConstructor
++public class ColaboradorEntity {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(nullable = false, unique = true)
++    private String nome;
++
++    private String matricula;
++
++    private String setor;
++
++    public ColaboradorEntity(String nome) {
++        this.nome = nome;
++    }
++}
+diff --git a/src/main/java/com/example/demo/domain/service/ColaboradorService.java b/src/main/java/com/example/demo/domain/service/ColaboradorService.java
+new file mode 100644
+index 0000000..d2f65c7
+--- /dev/null
++++ b/src/main/java/com/example/demo/domain/service/ColaboradorService.java
+@@ -0,0 +1,219 @@
++package com.example.demo.domain.service;
++
++import com.example.demo.domain.model.ColaboradorEntity;
++import com.example.demo.infrastructure.repository.ColaboradorRepository;
++import org.apache.poi.ss.usermodel.*;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++import org.springframework.web.multipart.MultipartFile;
++
++import java.io.BufferedReader;
++import java.io.IOException;
++import java.io.InputStream;
++import java.io.InputStreamReader;
++import java.nio.charset.StandardCharsets;
++import java.text.Normalizer;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++import java.util.stream.Collectors;
++
++@Service
++public class ColaboradorService {
++
++    private final ColaboradorRepository repository;
++
++    public ColaboradorService(ColaboradorRepository repository) {
++        this.repository = repository;
++    }
++
++    public List<ColaboradorEntity> listarTodos() {
++        return repository.findAll();
++    }
++
++    public List<ColaboradorEntity> buscar(String q) {
++        return repository.findByNomeContainingIgnoreCase(q == null ? "" : q);
++    }
++
++    @Transactional
++    public String importarPlanilha(MultipartFile file) {
++        if (file == null || file.isEmpty()) {
++            throw new IllegalArgumentException("O arquivo de planilha está vazio ou não foi fornecido.");
++        }
++
++        String nomeArquivo = file.getOriginalFilename() != null
++                ? file.getOriginalFilename().toLowerCase(Locale.ROOT)
++                : "";
++
++        List<LinhaColaborador> linhas;
++        try {
++            if (nomeArquivo.endsWith(".csv")) {
++                linhas = lerCsv(file);
++            } else if (nomeArquivo.endsWith(".xlsx") || nomeArquivo.endsWith(".xls")) {
++                linhas = lerXlsx(file);
++            } else {
++                throw new IllegalArgumentException("Formato não suportado. Envie um arquivo .xlsx, .xls ou .csv.");
++            }
++        } catch (IOException e) {
++            throw new IllegalArgumentException("Não foi possível ler o arquivo: " + e.getMessage(), e);
++        }
++
++        // Carrega os colaboradores já cadastrados num Map em memória (evita N
++        // queries e resolve duplicidade dentro da própria planilha) — mesmo
++        // truque usado no InventarioService.
++        Map<String, ColaboradorEntity> cachePorNome = repository.findAll().stream()
++                .collect(Collectors.toMap(
++                        c -> normalizeText(c.getNome()),
++                        c -> c,
++                        (existente, duplicado) -> existente));
++
++        int novos = 0;
++        int atualizados = 0;
++
++        for (LinhaColaborador linha : linhas) {
++            String nome = sanitizeText(linha.nome);
++            if (nome.isBlank()) continue;
++
++            String chave = normalizeText(nome);
++            boolean jaExiste = cachePorNome.containsKey(chave);
++
++            ColaboradorEntity colaborador = cachePorNome.computeIfAbsent(chave, k -> new ColaboradorEntity());
++            colaborador.setNome(nome);
++            colaborador.setMatricula(sanitizeText(linha.matricula));
++            colaborador.setSetor(sanitizeText(linha.setor));
++
++            repository.save(colaborador);
++
++            if (jaExiste) atualizados++; else novos++;
++        }
++
++        return String.format("Importação concluída! %d colaborador(es) novo(s) e %d atualizado(s).", novos, atualizados);
++    }
++
++    // ---------- XLSX / XLS ----------
++
++    private List<LinhaColaborador> lerXlsx(MultipartFile file) throws IOException {
++        List<LinhaColaborador> resultado = new ArrayList<>();
++        DataFormatter formatter = new DataFormatter();
++
++        try (InputStream is = file.getInputStream();
++             Workbook workbook = WorkbookFactory.create(is)) {
++
++            Sheet sheet = workbook.getSheetAt(0);
++            if (sheet == null || sheet.getPhysicalNumberOfRows() == 0) {
++                return resultado;
++            }
++
++            Row cabecalho = sheet.getRow(sheet.getFirstRowNum());
++            int colNome = -1, colMatricula = -1, colSetor = -1;
++
++            if (cabecalho != null) {
++                for (Cell cell : cabecalho) {
++                    String header = normalizeText(formatter.formatCellValue(cell));
++                    if (header.contains("nome") || header.contains("colaborador") || header.contains("funcionario")) {
++                        colNome = cell.getColumnIndex();
++                    } else if (header.contains("matricula") || header.contains("registro") || header.contains("id")) {
++                        colMatricula = cell.getColumnIndex();
++                    } else if (header.contains("setor") || header.contains("unidade") || header.contains("departamento") || header.contains("cargo")) {
++                        colSetor = cell.getColumnIndex();
++                    }
++                }
++            }
++            if (colNome == -1) colNome = 0; // fallback: primeira coluna é o nome
++
++            for (int i = sheet.getFirstRowNum() + 1; i <= sheet.getLastRowNum(); i++) {
++                Row row = sheet.getRow(i);
++                if (row == null) continue;
++
++                String nome = formatter.formatCellValue(row.getCell(colNome));
++                if (nome == null || nome.isBlank()) continue;
++
++                String matricula = colMatricula >= 0 ? formatter.formatCellValue(row.getCell(colMatricula)) : "";
++                String setor = colSetor >= 0 ? formatter.formatCellValue(row.getCell(colSetor)) : "";
++                resultado.add(new LinhaColaborador(nome, matricula, setor));
++            }
++        }
++        return resultado;
++    }
++
++    // ---------- CSV ----------
++
++    private List<LinhaColaborador> lerCsv(MultipartFile file) throws IOException {
++        List<LinhaColaborador> resultado = new ArrayList<>();
++
++        try (BufferedReader reader = new BufferedReader(
++                new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
++
++            String primeiraLinha = reader.readLine();
++            if (primeiraLinha == null) return resultado;
++
++            char separador = primeiraLinha.chars().filter(ch -> ch == ';').count()
++                    > primeiraLinha.chars().filter(ch -> ch == ',').count() ? ';' : ',';
++
++            List<String> colunas = parseLinhaCsv(primeiraLinha, separador).stream()
++                    .map(s -> normalizeText(s))
++                    .toList();
++
++            int colNome = -1, colMatricula = -1, colSetor = -1;
++            for (int i = 0; i < colunas.size(); i++) {
++                String c = colunas.get(i);
++                if (c.contains("nome") || c.contains("colaborador") || c.contains("funcionario")) colNome = i;
++                else if (c.contains("matricula") || c.contains("registro") || c.contains("id")) colMatricula = i;
++                else if (c.contains("setor") || c.contains("unidade") || c.contains("departamento") || c.contains("cargo")) colSetor = i;
++            }
++            if (colNome == -1) colNome = 0;
++
++            String linhaTexto;
++            while ((linhaTexto = reader.readLine()) != null) {
++                if (linhaTexto.isBlank()) continue;
++                List<String> valores = parseLinhaCsv(linhaTexto, separador);
++
++                String nome = colNome < valores.size() ? valores.get(colNome) : "";
++                if (nome.isBlank()) continue;
++
++                String matricula = (colMatricula >= 0 && colMatricula < valores.size()) ? valores.get(colMatricula) : "";
++                String setor = (colSetor >= 0 && colSetor < valores.size()) ? valores.get(colSetor) : "";
++                resultado.add(new LinhaColaborador(nome, matricula, setor));
++            }
++        }
++        return resultado;
++    }
++
++    private List<String> parseLinhaCsv(String linha, char separador) {
++        List<String> valores = new ArrayList<>();
++        StringBuilder atual = new StringBuilder();
++        boolean dentroDeAspas = false;
++
++        for (int i = 0; i < linha.length(); i++) {
++            char c = linha.charAt(i);
++            if (c == '"') {
++                dentroDeAspas = !dentroDeAspas;
++            } else if (c == separador && !dentroDeAspas) {
++                valores.add(atual.toString());
++                atual.setLength(0);
++            } else {
++                atual.append(c);
++            }
++        }
++        valores.add(atual.toString());
++        return valores;
++    }
++
++    // ---------- Sanitização / normalização ----------
++
++    private String sanitizeText(String input) {
++        if (input == null) return "";
++        return input.replaceAll("[\\p{Cntrl}&&[^\r\n\t]]", "").trim();
++    }
++
++    private String normalizeText(String text) {
++        if (text == null) return "";
++        return Normalizer.normalize(text, Normalizer.Form.NFD)
++                .replaceAll("\\p{M}", "")
++                .toLowerCase(Locale.ROOT)
++                .trim();
++    }
++
++    private record LinhaColaborador(String nome, String matricula, String setor) {}
++}
+diff --git a/src/main/java/com/example/demo/infrastructure/repository/ColaboradorRepository.java b/src/main/java/com/example/demo/infrastructure/repository/ColaboradorRepository.java
+new file mode 100644
+index 0000000..7fc395e
+--- /dev/null
++++ b/src/main/java/com/example/demo/infrastructure/repository/ColaboradorRepository.java
+@@ -0,0 +1,16 @@
++package com.example.demo.infrastructure.repository;
++
++import com.example.demo.domain.model.ColaboradorEntity;
++import org.springframework.data.jpa.repository.JpaRepository;
++import org.springframework.stereotype.Repository;
++
++import java.util.List;
++import java.util.Optional;
++
++@Repository
++public interface ColaboradorRepository extends JpaRepository<ColaboradorEntity, Long> {
++
++    Optional<ColaboradorEntity> findByNome(String nome);
++
++    List<ColaboradorEntity> findByNomeContainingIgnoreCase(String nome);
++}
+diff --git a/src/main/resources/static/js/app.js b/src/main/resources/static/js/app.js
+index d991196..63c09e4 100644
+--- a/src/main/resources/static/js/app.js
++++ b/src/main/resources/static/js/app.js
+@@ -36,6 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
+                 loadDashboardCharts();
+             } else if (targetId === 'section-inventory' || targetId === 'section-inventario') {
+                 loadInventoryList();
++            } else if (targetId === 'section-terms') {
++                loadColaboradoresList();
+             }
+ 
+             if (window.innerWidth <= 768 && sidebar) {
+@@ -53,6 +55,11 @@ document.addEventListener('DOMContentLoaded', () => {
+         importInput.addEventListener('change', handleImportInventory);
+     }
+ 
++    const importColaboradoresInput = document.getElementById('colaboradores-import-input');
++    if (importColaboradoresInput) {
++        importColaboradoresInput.addEventListener('change', handleImportColaboradores);
++    }
++
+     // Formulário de Login
+     const loginForm = document.getElementById('form-login');
+     if (loginForm) {
+@@ -63,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
+     if (document.getElementById('view-app') && !document.getElementById('view-app').classList.contains('d-none')) {
+         loadDashboardCharts();
+         loadInventoryList();
++        loadColaboradoresList();
+     }
+ });
+ 
+@@ -503,6 +511,66 @@ window.handleImportInventory = async function(event) {
+     }
+ };
+ 
++// --- 5b. COLABORADORES (autocomplete do campo "Nome do Colaborador") ---
++window.loadColaboradoresList = async function() {
++    try {
++        const response = await fetch('/api/colaboradores', {
++            method: 'GET',
++            credentials: 'include',
++            headers: { 'X-XSRF-TOKEN': getCsrfToken() }
++        });
++        if (!response.ok) return;
++
++        const colaboradores = await response.json();
++        const datalist = document.getElementById('colaboradores-datalist');
++        if (!datalist) return;
++
++        datalist.innerHTML = '';
++        (colaboradores || []).forEach(c => {
++            const option = document.createElement('option');
++            option.value = c.nome;
++            datalist.appendChild(option);
++        });
++    } catch (e) {
++        console.warn('Erro ao carregar lista de colaboradores:', e);
++    }
++};
++
++window.handleImportColaboradores = async function(event) {
++    const input = event?.target || document.getElementById('colaboradores-import-input');
++    const arquivo = input?.files?.[0];
++    if (!arquivo) return;
++
++    const formData = new FormData();
++    formData.append('file', arquivo);
++
++    showToast('Importando colaboradores...', 'info');
++
++    try {
++        const response = await fetch('/api/colaboradores/importar', {
++            method: 'POST',
++            credentials: 'include',
++            headers: { 'X-XSRF-TOKEN': getCsrfToken() },
++            body: formData
++        });
++
++        const json = await response.json().catch(() => null);
++
++        if (!response.ok || (json && json.sucesso === false)) {
++            throw new Error(json?.mensagem || `Erro ${response.status} ao importar a planilha.`);
++        }
++
++        showToast(json?.mensagem || 'Planilha de colaboradores importada com sucesso!', 'success');
++        await loadColaboradoresList();
++
++    } catch (error) {
++        console.error('Erro ao importar planilha de colaboradores:', error);
++        showToast(error.message || 'Falha ao importar a planilha.', 'error');
++    } finally {
++        if (input) input.value = '';
++    }
++};
++
+ window.deleteInventoryItem = async function(id) {
+     if (!id || id === 'undefined') {
+         showToast('Identificador do item inválido.', 'error');
+diff --git a/src/main/resources/templates/index.html b/src/main/resources/templates/index.html
+index 1d40c07..07380e3 100644
+--- a/src/main/resources/templates/index.html
++++ b/src/main/resources/templates/index.html
+@@ -199,7 +199,18 @@
+ 
+                         <div class="form-group">
+                             <label for="term-user">Nome do Colaborador / Responsável</label>
+-                            <input type="text" id="term-user" class="form-control" placeholder="Digite o nome completo" required oninput="validateTermForm()">
++                            <div style="display:flex; gap:8px; align-items:flex-start;">
++                                <input type="text" id="term-user" class="form-control" list="colaboradores-datalist"
++                                       placeholder="Digite ou selecione o nome" required oninput="validateTermForm()" style="flex:1;">
++                                <button type="button" class="btn-secondary" title="Importar planilha de colaboradores"
++                                        onclick="document.getElementById('colaboradores-import-input').click()">
++                                    <i class="fas fa-file-import"></i>
++                                </button>
++                                <input type="file" id="colaboradores-import-input" accept=".xlsx,.xls,.csv" style="display:none">
++                            </div>
++                            <datalist id="colaboradores-datalist"></datalist>
++                            <!-- O nome digitado não precisa estar na lista: quem não foi
++                                 importado ainda pode ser digitado livremente, como sempre. -->
+                         </div>
+ 
+                         <div class="form-row">
+-- 
+2.43.0
+

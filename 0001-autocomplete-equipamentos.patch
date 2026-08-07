@@ -1,0 +1,144 @@
+From 7fb82177115ee2802ba15ab0e0c1cce0038125f3 Mon Sep 17 00:00:00 2001
+From: "Claude (auditoria AutoDocs)" <assistente@local>
+Date: Fri, 7 Aug 2026 18:36:34 +0000
+Subject: [PATCH] =?UTF-8?q?feat(termos):=20autocomplete=20de=20equipamento?=
+ =?UTF-8?q?=20no=20gerador=20de=20termo,=20a=20partir=20do=20mesmo=20inven?=
+ =?UTF-8?q?t=C3=A1rio?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Mesmo padrão do autocomplete de colaboradores, mas sem tabela nova:
+reaproveita 100% o tb_inventario/GET /api/inventario que já
+alimenta a aba Inventário de TI e o dashboard — é a mesma planilha,
+uma fonte só.
+
+- index.html: campos 'Nº Patrimônio/Tag' e 'Nome/Descrição do
+  equipamento' de cada item do termo ganham datalist (autocomplete
+  nativo, texto livre continua funcionando); datalists compartilhados
+  entre todas as linhas de item.
+- app.js: loadEquipamentosDatalist() consulta /api/inventario e
+  popula os dois datalists. Disparado ao abrir a aba 'Gerar Termo',
+  no boot inicial (se já autenticado) e logo depois de uma
+  importação de planilha de inventário — pra não precisar trocar de
+  aba pra ver os itens recém-importados disponíveis no formulário.
+---
+ src/main/resources/static/js/app.js     | 44 +++++++++++++++++++++++--
+ src/main/resources/templates/index.html |  8 +++--
+ 2 files changed, 48 insertions(+), 4 deletions(-)
+
+diff --git a/src/main/resources/static/js/app.js b/src/main/resources/static/js/app.js
+index 63c09e4..69b5499 100644
+--- a/src/main/resources/static/js/app.js
++++ b/src/main/resources/static/js/app.js
+@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
+                 loadInventoryList();
+             } else if (targetId === 'section-terms') {
+                 loadColaboradoresList();
++                loadEquipamentosDatalist();
+             }
+ 
+             if (window.innerWidth <= 768 && sidebar) {
+@@ -71,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
+         loadDashboardCharts();
+         loadInventoryList();
+         loadColaboradoresList();
++        loadEquipamentosDatalist();
+     }
+ });
+ 
+@@ -268,10 +270,10 @@ window.addTermItemRow = function() {
+     row.style.cssText = 'display: flex; gap: 10px; margin-bottom: 8px;';
+     row.innerHTML = `
+         <div class="form-group flex-grow-1 mb-0" style="flex: 1;">
+-            <input type="text" class="form-control item-patrimonio" placeholder="Nº Patrimônio / Tag" required oninput="validateTermForm()">
++            <input type="text" class="form-control item-patrimonio" list="equipamentos-patrimonio-datalist" placeholder="Nº Patrimônio / Tag" required oninput="validateTermForm()">
+         </div>
+         <div class="form-group flex-grow-1 mb-0" style="flex: 1;">
+-            <input type="text" class="form-control item-equipamento" placeholder="Nome / Descrição do equipamento" oninput="validateTermForm()">
++            <input type="text" class="form-control item-equipamento" list="equipamentos-nome-datalist" placeholder="Nome / Descrição do equipamento" oninput="validateTermForm()">
+         </div>
+         <button type="button" class="action-btn delete btn-remove-item" onclick="removeTermItemRow(this)" title="Remover item">
+             <i class="fas fa-trash"></i>
+@@ -502,6 +504,7 @@ window.handleImportInventory = async function(event) {
+         showToast(mensagemSucesso, 'success');
+ 
+         await loadInventoryList();
++        await loadEquipamentosDatalist();
+ 
+     } catch (error) {
+         console.error('Erro ao importar planilha de inventário:', error);
+@@ -571,6 +574,43 @@ window.handleImportColaboradores = async function(event) {
+     }
+ };
+ 
++// --- 5c. EQUIPAMENTOS (autocomplete dos itens do termo, mesma planilha do Inventário) ---
++window.loadEquipamentosDatalist = async function() {
++    try {
++        const response = await fetch('/api/inventario', {
++            method: 'GET',
++            credentials: 'include',
++            headers: { 'X-XSRF-TOKEN': getCsrfToken() }
++        });
++        if (!response.ok) return;
++
++        const data = await response.json();
++        const itens = Array.isArray(data) ? data : (data.dados || []);
++
++        const datalistPatrimonio = document.getElementById('equipamentos-patrimonio-datalist');
++        const datalistNome = document.getElementById('equipamentos-nome-datalist');
++        if (!datalistPatrimonio || !datalistNome) return;
++
++        datalistPatrimonio.innerHTML = '';
++        datalistNome.innerHTML = '';
++
++        (itens || []).forEach(item => {
++            if (item.patrimonio) {
++                const opt = document.createElement('option');
++                opt.value = item.patrimonio;
++                datalistPatrimonio.appendChild(opt);
++            }
++            if (item.nome) {
++                const opt = document.createElement('option');
++                opt.value = item.nome;
++                datalistNome.appendChild(opt);
++            }
++        });
++    } catch (e) {
++        console.warn('Erro ao carregar lista de equipamentos para autocomplete:', e);
++    }
++};
++
+ window.deleteInventoryItem = async function(id) {
+     if (!id || id === 'undefined') {
+         showToast('Identificador do item inválido.', 'error');
+diff --git a/src/main/resources/templates/index.html b/src/main/resources/templates/index.html
+index 07380e3..7b55e75 100644
+--- a/src/main/resources/templates/index.html
++++ b/src/main/resources/templates/index.html
+@@ -237,16 +237,20 @@
+                                 <!-- Linha 1 padrão (inicial) -->
+                                 <div class="term-item-row form-row align-items-center mb-2" style="display: flex; gap: 10px; margin-bottom: 8px;">
+                                     <div class="form-group flex-grow-1 mb-0" style="flex: 1;">
+-                                        <input type="text" class="form-control item-patrimonio" placeholder="Nº Patrimônio / Tag" required oninput="validateTermForm()">
++                                        <input type="text" class="form-control item-patrimonio" list="equipamentos-patrimonio-datalist" placeholder="Nº Patrimônio / Tag" required oninput="validateTermForm()">
+                                     </div>
+                                     <div class="form-group flex-grow-1 mb-0" style="flex: 1;">
+-                                        <input type="text" class="form-control item-equipamento" placeholder="Nome / Descrição do equipamento" oninput="validateTermForm()">
++                                        <input type="text" class="form-control item-equipamento" list="equipamentos-nome-datalist" placeholder="Nome / Descrição do equipamento" oninput="validateTermForm()">
+                                     </div>
+                                     <button type="button" class="action-btn delete btn-remove-item" onclick="removeTermItemRow(this)" title="Remover item">
+                                         <i class="fas fa-trash"></i>
+                                     </button>
+                                 </div>
+                             </div>
++                            <!-- Populados a partir do mesmo inventário (tb_inventario) importado
++                                 na aba Inventário de TI — ver loadEquipamentosDatalist() em app.js -->
++                            <datalist id="equipamentos-patrimonio-datalist"></datalist>
++                            <datalist id="equipamentos-nome-datalist"></datalist>
+                         </div>
+ 
+                         <button type="submit" id="btn-generate-doc" class="btn-primary mt-4 w-100" disabled>
+-- 
+2.43.0
+

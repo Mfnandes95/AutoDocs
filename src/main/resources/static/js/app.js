@@ -36,6 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadDashboardCharts();
             } else if (targetId === 'section-inventory' || targetId === 'section-inventario') {
                 loadInventoryList();
+            } else if (targetId === 'section-terms') {
+                loadColaboradoresList();
+                loadEquipamentosDatalist();
             }
 
             if (window.innerWidth <= 768 && sidebar) {
@@ -53,6 +56,11 @@ document.addEventListener('DOMContentLoaded', () => {
         importInput.addEventListener('change', handleImportInventory);
     }
 
+    const importColaboradoresInput = document.getElementById('colaboradores-import-input');
+    if (importColaboradoresInput) {
+        importColaboradoresInput.addEventListener('change', handleImportColaboradores);
+    }
+
     // Formulário de Login
     const loginForm = document.getElementById('form-login');
     if (loginForm) {
@@ -63,6 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('view-app') && !document.getElementById('view-app').classList.contains('d-none')) {
         loadDashboardCharts();
         loadInventoryList();
+        loadColaboradoresList();
+        loadEquipamentosDatalist();
     }
 });
 
@@ -260,10 +270,10 @@ window.addTermItemRow = function() {
     row.style.cssText = 'display: flex; gap: 10px; margin-bottom: 8px;';
     row.innerHTML = `
         <div class="form-group flex-grow-1 mb-0" style="flex: 1;">
-            <input type="text" class="form-control item-patrimonio" placeholder="Nº Patrimônio / Tag" required oninput="validateTermForm()">
+            <input type="text" class="form-control item-patrimonio" list="equipamentos-patrimonio-datalist" placeholder="Nº Patrimônio / Tag" required oninput="validateTermForm()">
         </div>
         <div class="form-group flex-grow-1 mb-0" style="flex: 1;">
-            <input type="text" class="form-control item-equipamento" placeholder="Nome / Descrição do equipamento" oninput="validateTermForm()">
+            <input type="text" class="form-control item-equipamento" list="equipamentos-nome-datalist" placeholder="Nome / Descrição do equipamento" oninput="validateTermForm()">
         </div>
         <button type="button" class="action-btn delete btn-remove-item" onclick="removeTermItemRow(this)" title="Remover item">
             <i class="fas fa-trash"></i>
@@ -494,12 +504,110 @@ window.handleImportInventory = async function(event) {
         showToast(mensagemSucesso, 'success');
 
         await loadInventoryList();
+        await loadEquipamentosDatalist();
 
     } catch (error) {
         console.error('Erro ao importar planilha de inventário:', error);
         showToast(error.message || 'Falha ao importar a planilha.', 'error');
     } finally {
         if (input) input.value = '';
+    }
+};
+
+// --- 5b. COLABORADORES (autocomplete do campo "Nome do Colaborador") ---
+window.loadColaboradoresList = async function() {
+    try {
+        const response = await fetch('/api/colaboradores', {
+            method: 'GET',
+            credentials: 'include',
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() }
+        });
+        if (!response.ok) return;
+
+        const colaboradores = await response.json();
+        const datalist = document.getElementById('colaboradores-datalist');
+        if (!datalist) return;
+
+        datalist.innerHTML = '';
+        (colaboradores || []).forEach(c => {
+            const option = document.createElement('option');
+            option.value = c.nome;
+            datalist.appendChild(option);
+        });
+    } catch (e) {
+        console.warn('Erro ao carregar lista de colaboradores:', e);
+    }
+};
+
+window.handleImportColaboradores = async function(event) {
+    const input = event?.target || document.getElementById('colaboradores-import-input');
+    const arquivo = input?.files?.[0];
+    if (!arquivo) return;
+
+    const formData = new FormData();
+    formData.append('file', arquivo);
+
+    showToast('Importando colaboradores...', 'info');
+
+    try {
+        const response = await fetch('/api/colaboradores/importar', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() },
+            body: formData
+        });
+
+        const json = await response.json().catch(() => null);
+
+        if (!response.ok || (json && json.sucesso === false)) {
+            throw new Error(json?.mensagem || `Erro ${response.status} ao importar a planilha.`);
+        }
+
+        showToast(json?.mensagem || 'Planilha de colaboradores importada com sucesso!', 'success');
+        await loadColaboradoresList();
+
+    } catch (error) {
+        console.error('Erro ao importar planilha de colaboradores:', error);
+        showToast(error.message || 'Falha ao importar a planilha.', 'error');
+    } finally {
+        if (input) input.value = '';
+    }
+};
+
+// --- 5c. EQUIPAMENTOS (autocomplete dos itens do termo, mesma planilha do Inventário) ---
+window.loadEquipamentosDatalist = async function() {
+    try {
+        const response = await fetch('/api/inventario', {
+            method: 'GET',
+            credentials: 'include',
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() }
+        });
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const itens = Array.isArray(data) ? data : (data.dados || []);
+
+        const datalistPatrimonio = document.getElementById('equipamentos-patrimonio-datalist');
+        const datalistNome = document.getElementById('equipamentos-nome-datalist');
+        if (!datalistPatrimonio || !datalistNome) return;
+
+        datalistPatrimonio.innerHTML = '';
+        datalistNome.innerHTML = '';
+
+        (itens || []).forEach(item => {
+            if (item.patrimonio) {
+                const opt = document.createElement('option');
+                opt.value = item.patrimonio;
+                datalistPatrimonio.appendChild(opt);
+            }
+            if (item.nome) {
+                const opt = document.createElement('option');
+                opt.value = item.nome;
+                datalistNome.appendChild(opt);
+            }
+        });
+    } catch (e) {
+        console.warn('Erro ao carregar lista de equipamentos para autocomplete:', e);
     }
 };
 
