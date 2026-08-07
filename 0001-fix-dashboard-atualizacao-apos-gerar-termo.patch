@@ -1,0 +1,188 @@
+From dd256470a71d27b95cc59aa8cc7a8be27493fd5a Mon Sep 17 00:00:00 2001
+From: "Claude (auditoria AutoDocs)" <assistente@local>
+Date: Thu, 6 Aug 2026 11:52:13 +0000
+Subject: [PATCH] =?UTF-8?q?fix(dashboard):=20atualizar=20m=C3=A9tricas=20a?=
+ =?UTF-8?q?p=C3=B3s=20gerar=20termo=20e=20reaplicar=20agrega=C3=A7=C3=A3o?=
+ =?UTF-8?q?=20real?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Regressão do commit anterior (574e279) que não incluiu partes de um
+fix já feito:
+
+- app.js: chama loadDashboardCharts() após gerar um termo com
+  sucesso. Sem isso, nada disparava um refresh do dashboard nesse
+  fluxo — só login ou clique manual na aba Dashboard recarregavam.
+- app.js: corrige de novo a URL do dashboard, que tinha voltado a
+  ser /api/dashboard/metrics (404); rota real é /api/termos/dashboard.
+  Lê o envelope real ApiResponse.dados.
+- app.js: corrige de novo a URL de inventário (/api/inventario ->
+  /equipamentos).
+- DashboardDTO/DocsService: reaplica a agregação real por unidade
+  e por tipo, e o cálculo de termos a vencer em 7 dias — estava de
+  volta a um placeholder fixo (Map.of("Equipamentos", total)) que
+  não agrupava nada.
+---
+ .../example/demo/domain/dto/DashboardDTO.java | 10 +++++++
+ .../demo/domain/service/DocsService.java      | 29 +++++++++++++++++-
+ src/main/resources/static/js/app.js           | 30 ++++++++++++-------
+ 3 files changed, 57 insertions(+), 12 deletions(-)
+
+diff --git a/src/main/java/com/example/demo/domain/dto/DashboardDTO.java b/src/main/java/com/example/demo/domain/dto/DashboardDTO.java
+index fa921d7..71e36d4 100644
+--- a/src/main/java/com/example/demo/domain/dto/DashboardDTO.java
++++ b/src/main/java/com/example/demo/domain/dto/DashboardDTO.java
+@@ -6,6 +6,7 @@ import lombok.Data;
+ import lombok.NoArgsConstructor;
+ 
+ import java.util.List;
++import java.util.Map;
+ 
+ @Data
+ @Builder
+@@ -23,6 +24,15 @@ public class DashboardDTO {
+     // Ex: "2026-05" -> 45 termos, "2026-06" -> 60 termos
+     private List<GraficoEvolucaoDTO> graficoEvolucaoMensal;
+ 
++    // Quantidade de termos ativos agrupados por unidade/escritório (gráfico "por escritório")
++    private Map<String, Long> porUnidade;
++
++    // Quantidade de termos ativos agrupados por tipo de equipamento (gráfico "por categoria")
++    private Map<String, Long> porTipo;
++
++    // Termos cuja dataTermino cai nos próximos 7 dias (KPI "a vencer")
++    private Long totalAVencer;
++
+     @Data
+     @Builder
+     @NoArgsConstructor
+diff --git a/src/main/java/com/example/demo/domain/service/DocsService.java b/src/main/java/com/example/demo/domain/service/DocsService.java
+index 545a89b..1cdccae 100755
+--- a/src/main/java/com/example/demo/domain/service/DocsService.java
++++ b/src/main/java/com/example/demo/domain/service/DocsService.java
+@@ -112,12 +112,13 @@ public class DocsService implements GerarDocumentoUseCase {
+ 
+     public EstatisticasDTO obterEstatisticas() {
+         long total = reposit.count();
++        Map<String, Long> porTipo = calcularPorTipo();
+         return EstatisticasDTO.builder()
+                 .totalTermosGerados(total)
+                 .termosGeradosMesAtual(0L)
+                 .tempoMedioProcessamentoMs(125.5)
+                 .errosDeGeracaoMesAtual(0)
+-                .termosPorCategoria(Map.of("Equipamentos", total))
++                .termosPorCategoria(porTipo)
+                 .build();
+     }
+ 
+@@ -125,12 +126,38 @@ public class DocsService implements GerarDocumentoUseCase {
+         EstatisticasDTO estatisticas = obterEstatisticas();
+         List<DadosTermoDTO> todos = listarTodosOsTermos();
+         List<DadosTermoDTO> recentes = todos.size() > 5 ? todos.subList(0, 5) : todos;
++
++        List<TermoEntity> entidades = reposit.findAll();
++
++        Map<String, Long> porUnidade = entidades.stream()
++                .collect(Collectors.groupingBy(
++                        t -> (t.getUnidade() == null || t.getUnidade().isBlank()) ? "Não informado" : t.getUnidade(),
++                        Collectors.counting()));
++
++        LocalDateTime agora = LocalDateTime.now();
++        LocalDateTime limite = agora.plusDays(7);
++        long aVencer = entidades.stream()
++                .filter(t -> t.getDataTermino() != null
++                        && !t.getDataTermino().isBefore(agora)
++                        && !t.getDataTermino().isAfter(limite))
++                .count();
++
+         return DashboardDTO.builder()
+                 .estatisticasGerais(estatisticas)
+                 .atividadesRecentes(recentes)
++                .porUnidade(porUnidade)
++                .porTipo(estatisticas.getTermosPorCategoria())
++                .totalAVencer(aVencer)
+                 .build();
+     }
+ 
++    private Map<String, Long> calcularPorTipo() {
++        return reposit.findAll().stream()
++                .collect(Collectors.groupingBy(
++                        t -> (t.getTipo() == null || t.getTipo().isBlank()) ? "Não informado" : t.getTipo(),
++                        Collectors.counting()));
++    }
++
+     @Override public String executar(DadosTermo dadosDTO)                          { return null; }
+     @Override public byte[] gerarArquivoBinario(DadosTermo dadosDTO)               { return null; }
+     @Override public byte[] gerarArquivoDinamico(MultipartFile file, DadosTermo d) { return null; }
+diff --git a/src/main/resources/static/js/app.js b/src/main/resources/static/js/app.js
+index 931fd96..6cfbe5f 100644
+--- a/src/main/resources/static/js/app.js
++++ b/src/main/resources/static/js/app.js
+@@ -174,7 +174,7 @@ async function loadDashboardCharts() {
+     let equipmentValues = [];
+ 
+     try {
+-        const response = await fetch('/api/dashboard/metrics', {
++        const response = await fetch('/api/termos/dashboard', {
+             method: 'GET',
+             credentials: 'include',
+             headers: {
+@@ -182,21 +182,24 @@ async function loadDashboardCharts() {
+             }
+         });
+         if (response.ok) {
+-            const data = await response.json();
+-            officeLabels = data.offices?.map(o => o.nome) || [];
+-            officeValues = data.offices?.map(o => o.qtd) || [];
+-            equipmentLabels = data.equipments?.map(e => e.categoria) || [];
+-            equipmentValues = data.equipments?.map(e => e.qtd) || [];
++            // O backend envolve a resposta em ApiResponse: { sucesso, mensagem, dados }
++            const envelope = await response.json();
++            const data = envelope?.dados || {};
++
++            officeLabels = Object.keys(data.porUnidade || {});
++            officeValues = Object.values(data.porUnidade || {});
++            equipmentLabels = Object.keys(data.porTipo || {});
++            equipmentValues = Object.values(data.porTipo || {});
+ 
+             const totalBorrowed = document.getElementById('kpi-total-borrowed');
+             const totalOffices = document.getElementById('kpi-total-offices');
+             const totalTypes = document.getElementById('kpi-total-types');
+             const expiringSoon = document.getElementById('kpi-expiring-soon');
+ 
+-            if (totalBorrowed) totalBorrowed.innerText = data.totalEmprestimos || 0;
+-            if (totalOffices) totalOffices.innerText = data.totalEscritorios || 0;
+-            if (totalTypes) totalTypes.innerText = data.totalTipos || 0;
+-            if (expiringSoon) expiringSoon.innerText = data.aVencer || 0;
++            if (totalBorrowed) totalBorrowed.innerText = data.estatisticasGerais?.totalTermosGerados || 0;
++            if (totalOffices) totalOffices.innerText = officeLabels.length;
++            if (totalTypes) totalTypes.innerText = equipmentLabels.length;
++            if (expiringSoon) expiringSoon.innerText = data.totalAVencer || 0;
+         }
+     } catch (e) {
+         console.warn('Erro ao carregar métricas do dashboard:', e);
+@@ -399,6 +402,11 @@ async function handleGenerateTerm(event) {
+ 
+         showToast('Termo gerado com sucesso!', 'success');
+ 
++        // Sem isso, o dashboard só é recarregado no login ou ao clicar
++        // manualmente na aba Dashboard — gerar um termo nunca disparava
++        // um refresh dos números/gráficos.
++        loadDashboardCharts();
++
+     } catch (error) {
+         console.error('Erro ao gerar termo:', error);
+         showToast(error.message, 'error');
+@@ -429,7 +437,7 @@ async function handleSaveInventoryItem(event) {
+     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+ 
+     try {
+-        const response = await fetch('/api/inventario', {
++        const response = await fetch('/equipamentos', {
+             method: 'POST',
+             credentials: 'include',
+             headers: {
+-- 
+2.43.0
+

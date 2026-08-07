@@ -6,7 +6,7 @@
 let officeChartInstance = null;
 let equipmentChartInstance = null;
 
-// --- 1. NAVEGAÇÃO SPA E MENU MOBILE ---
+// --- 1. NAVEGAÇÃO SPA, MENU MOBILE E INICIALIZAÇÃO ---
 document.addEventListener('DOMContentLoaded', () => {
     const navItems = document.querySelectorAll('.nav-item');
     const appSections = document.querySelectorAll('.app-section');
@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const menuToggle = document.getElementById('menu-toggle');
     const closeMenu = document.getElementById('close-menu');
 
+    // Navegação entre seções
     navItems.forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
@@ -30,8 +31,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
+            // Dispara requisições de acordo com a aba visível
             if (targetId === 'section-dashboard') {
                 loadDashboardCharts();
+            } else if (targetId === 'section-inventory' || targetId === 'section-inventario') {
+                loadInventoryList();
             }
 
             if (window.innerWidth <= 768 && sidebar) {
@@ -43,13 +47,27 @@ document.addEventListener('DOMContentLoaded', () => {
     menuToggle?.addEventListener('click', () => sidebar?.classList.add('active'));
     closeMenu?.addEventListener('click', () => sidebar?.classList.remove('active'));
 
+    // Vinculação automática do input de importação de planilha
+    const importInput = document.getElementById('file-inventario') || document.getElementById('inventory-import-input');
+    if (importInput) {
+        importInput.addEventListener('change', handleImportInventory);
+    }
+
+    // Formulário de Login
+    const loginForm = document.getElementById('form-login');
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLoginSubmit);
+    }
+
+    // Inicialização da View Principal (caso já carregue autenticado)
     if (document.getElementById('view-app') && !document.getElementById('view-app').classList.contains('d-none')) {
         loadDashboardCharts();
+        loadInventoryList();
     }
 });
 
 // --- 2. CONTROLE DE AUTENTICAÇÃO (LOGIN / REGISTRO / LOGOUT) ---
-function switchAuthView(view) {
+window.switchAuthView = function(view) {
     const boxLogin = document.getElementById('box-login');
     const boxRegister = document.getElementById('box-register');
 
@@ -60,92 +78,68 @@ function switchAuthView(view) {
         boxRegister?.classList.add('d-none');
         boxLogin?.classList.remove('d-none');
     }
+};
+
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const loginForm = e.target;
+
+    const btn = loginForm.querySelector('button[type="submit"]');
+    const originalText = btn ? btn.innerHTML : '';
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Entrando...';
+    }
+
+    const emailInput = loginForm.querySelector('input[name="email"], #login-email');
+    const passwordInput = loginForm.querySelector('input[name="password"], #login-password');
+
+    const emailValue = emailInput ? emailInput.value.trim() : '';
+    const passwordValue = passwordInput ? passwordInput.value : '';
+
+    const bodyParams = new URLSearchParams();
+    bodyParams.append('email', emailValue);
+    bodyParams.append('password', passwordValue);
+
+    try {
+        const response = await fetch('/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-XSRF-TOKEN': getCsrfToken()
+            },
+            credentials: 'include',
+            body: bodyParams
+        });
+
+        if (response.ok || response.status === 200) {
+            document.getElementById('view-auth')?.classList.add('d-none');
+            document.getElementById('view-app')?.classList.remove('d-none');
+            
+            loadDashboardCharts();
+            loadInventoryList();
+            showToast('Login realizado com sucesso!', 'success');
+        } else {
+            let mensagem = 'Usuário ou senha inválidos.';
+            try {
+                const corpo = await response.json();
+                if (corpo?.mensagem) mensagem = corpo.mensagem;
+            } catch (_) {}
+            showToast(mensagem, 'error');
+        }
+    } catch (error) {
+        console.error('Erro na requisição de login:', error);
+        showToast('Falha na comunicação com o servidor.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
 }
 
-// Submissão do Formulário de Login com captura tratada (.trim)
-document.addEventListener('DOMContentLoaded', () => {
-    const loginForm = document.getElementById('form-login');
-
-    if (loginForm) {
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const btn = loginForm.querySelector('button[type="submit"]');
-            const originalText = btn ? btn.innerHTML : '';
-
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Entrando...';
-            }
-
-            // Captura os elementos de input suportando diferentes convenções de ID/Name
-            const emailInput = loginForm.querySelector('input[name="email"], input[name="username"], #login-email, #email');
-            const passwordInput = loginForm.querySelector('input[name="password"], input[name="senha"], #login-password, #senha');
-
-            // O e-mail pode ser trimado com segurança (o backend normaliza
-            // e-mail da mesma forma no cadastro/login). A SENHA não deve ser
-            // trimada aqui: o cadastro não trima a senha antes de gerar o
-            // hash, então trimar só no login criaria uma senha "diferente"
-            // da que foi de fato cadastrada sempre que ela tiver espaço
-            // nas pontas — e o login falharia mesmo com a senha "correta".
-            const emailValue = emailInput ? emailInput.value.trim() : '';
-            const passwordValue = passwordInput ? passwordInput.value : '';
-
-            // Monta os parâmetros exatamente com as chaves "email" e "password" configuradas no Spring Security
-            const bodyParams = new URLSearchParams();
-            bodyParams.append('email', emailValue);
-            bodyParams.append('password', passwordValue);
-
-            try {
-                const response = await fetch('/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'X-XSRF-TOKEN': getCsrfToken()
-                    },
-                    credentials: 'include',
-                    body: bodyParams
-                });
-
-                if (response.ok || response.status === 200) {
-                    document.getElementById('view-auth')?.classList.add('d-none');
-                    document.getElementById('view-app')?.classList.remove('d-none');
-                    
-                    loadDashboardCharts();
-                    showToast('Login realizado com sucesso!', 'success');
-                } else {
-                    // O failureHandler do SecurityConfig devolve um JSON com a
-                    // mensagem real do erro (e-mail não encontrado, senha
-                    // incorreta, etc). Mostrar essa mensagem em vez de um
-                    // texto fixo evita mascarar a causa real (ex: 403 de CSRF
-                    // vs 401 de credencial inválida vs 500 do servidor).
-                    let mensagem = 'Usuário ou senha inválidos.';
-                    try {
-                        const corpo = await response.json();
-                        if (corpo?.mensagem) {
-                            mensagem = response.status === 401
-                                ? 'Usuário ou senha inválidos.'
-                                : corpo.mensagem;
-                        }
-                    } catch (_) {
-                        // resposta não era JSON (ex: erro 500 genérico) — mantém mensagem padrão
-                    }
-                    showToast(mensagem, 'error');
-                }
-            } catch (error) {
-                console.error('Erro na requisição de login:', error);
-                showToast('Falha na comunicação com o servidor.', 'error');
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-            }
-        });
-    }
-});
-
-function executeLogout() {
+window.executeLogout = function() {
     closeModal('modal-logout');
     const form = document.createElement('form');
     form.method = 'POST';
@@ -159,10 +153,10 @@ function executeLogout() {
 
     document.body.appendChild(form);
     form.submit();
-}
+};
 
 // --- 3. RELATÓRIOS E GRÁFICOS (CHART.JS) ---
-async function loadDashboardCharts() {
+window.loadDashboardCharts = async function() {
     if (typeof Chart === 'undefined') return;
 
     Chart.defaults.color = '#9ca3af';
@@ -177,14 +171,12 @@ async function loadDashboardCharts() {
         const response = await fetch('/api/termos/dashboard', {
             method: 'GET',
             credentials: 'include',
-            headers: {
-                'X-XSRF-TOKEN': getCsrfToken()
-            }
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() }
         });
+
         if (response.ok) {
-            // O backend envolve a resposta em ApiResponse: { sucesso, mensagem, dados }
             const envelope = await response.json();
-            const data = envelope?.dados || {};
+            const data = envelope?.dados || envelope || {};
 
             officeLabels = Object.keys(data.porUnidade || {});
             officeValues = Object.values(data.porUnidade || {});
@@ -196,10 +188,10 @@ async function loadDashboardCharts() {
             const totalTypes = document.getElementById('kpi-total-types');
             const expiringSoon = document.getElementById('kpi-expiring-soon');
 
-            if (totalBorrowed) totalBorrowed.innerText = data.estatisticasGerais?.totalTermosGerados || 0;
+            if (totalBorrowed) totalBorrowed.innerText = data.estatisticasGerais?.totalTermosGerados || data.totalBorrowings || 0;
             if (totalOffices) totalOffices.innerText = officeLabels.length;
             if (totalTypes) totalTypes.innerText = equipmentLabels.length;
-            if (expiringSoon) expiringSoon.innerText = data.totalAVencer || 0;
+            if (expiringSoon) expiringSoon.innerText = data.totalAVencer || data.expiringSoon || 0;
         }
     } catch (e) {
         console.warn('Erro ao carregar métricas do dashboard:', e);
@@ -251,17 +243,15 @@ async function loadDashboardCharts() {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'bottom', labels: { padding: 15, usePointStyle: true } }
-                },
+                plugins: { legend: { position: 'bottom', labels: { padding: 15, usePointStyle: true } } },
                 cutout: '68%'
             }
         });
     }
-}
+};
 
 // --- 4. GERADOR DE TERMOS DE RESPONSABILIDADE ---
-function addTermItemRow() {
+window.addTermItemRow = function() {
     const listContainer = document.getElementById('term-items-list');
     if (!listContainer) return;
 
@@ -282,9 +272,9 @@ function addTermItemRow() {
 
     listContainer.appendChild(row);
     validateTermForm();
-}
+};
 
-function removeTermItemRow(button) {
+window.removeTermItemRow = function(button) {
     const rows = document.querySelectorAll('.term-item-row');
     if (rows.length > 1) {
         button.closest('.term-item-row').remove();
@@ -292,9 +282,9 @@ function removeTermItemRow(button) {
     } else {
         showToast('O termo deve conter ao menos 1 item.', 'info');
     }
-}
+};
 
-function validateTermForm() {
+window.validateTermForm = function() {
     const user = document.getElementById('term-user')?.value.trim();
     const dateStart = document.getElementById('term-date-start')?.value;
     const dateEnd = document.getElementById('term-date-end')?.value;
@@ -309,16 +299,14 @@ function validateTermForm() {
 
     itemRows.forEach(row => {
         const patrimonio = row.querySelector('.item-patrimonio')?.value.trim();
-        if (!patrimonio) {
-            hasValidItems = false;
-        }
+        if (!patrimonio) hasValidItems = false;
     });
 
     const isDatesValid = dateStart && dateEnd && new Date(dateEnd) >= new Date(dateStart);
     btn.disabled = !(user && isDatesValid && hasValidItems && hasFile);
-}
+};
 
-async function handleGenerateTerm(event) {
+window.handleGenerateTerm = async function(event) {
     if (event) event.preventDefault();
 
     const btn = document.getElementById('btn-generate-doc');
@@ -361,31 +349,16 @@ async function handleGenerateTerm(event) {
         const response = await fetch('/api/termos/gerar', {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                'X-XSRF-TOKEN': getCsrfToken()
-            },
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() },
             body: formData
         });
-
-        const contentType = response.headers.get('content-type') || '';
-
-        // SE O SERVIDOR RETORNAR HTML OU REDIRECIONAR (SESSÃO INVÁLIDA)
-        if (response.redirected || contentType.includes('text/html')) {
-            showToast('Sessão expirada ou não autorizada. Faça login novamente.', 'error');
-            document.getElementById('view-app')?.classList.add('d-none');
-            document.getElementById('view-auth')?.classList.remove('d-none');
-            return;
-        }
 
         if (!response.ok) {
             let errorMsg = 'Falha ao processar o documento.';
             try {
                 const errorJson = await response.json();
                 errorMsg = errorJson.mensagem || errorJson.message || errorMsg;
-            } catch (_) {
-                const rawText = await response.text();
-                if (rawText) errorMsg = rawText;
-            }
+            } catch (_) {}
             throw new Error(errorMsg);
         }
 
@@ -401,10 +374,6 @@ async function handleGenerateTerm(event) {
         window.URL.revokeObjectURL(downloadUrl);
 
         showToast('Termo gerado com sucesso!', 'success');
-
-        // Sem isso, o dashboard só é recarregado no login ou ao clicar
-        // manualmente na aba Dashboard — gerar um termo nunca disparava
-        // um refresh dos números/gráficos.
         loadDashboardCharts();
 
     } catch (error) {
@@ -416,10 +385,39 @@ async function handleGenerateTerm(event) {
             btn.innerHTML = originalText;
         }
     }
-}
+};
 
-// --- 5. CADASTRO DE INVENTÁRIO ---
-async function handleSaveInventoryItem(event) {
+// --- 5. CADASTRO, EXCLUSÃO E IMPORTAÇÃO DE INVENTÁRIO ---
+
+window.loadInventoryList = async function() {
+    try {
+        const response = await fetch('/api/inventario', {
+            method: 'GET',
+            credentials: 'include',
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() }
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const itens = Array.isArray(data) ? data : (data.dados || []);
+        const tbody = document.getElementById('inventory-table-body');
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+        if (!itens || itens.length === 0) {
+            tbody.innerHTML = '<tr id="empty-inventory-row"><td colspan="5" style="text-align:center;">Nenhum ativo cadastrado.</td></tr>';
+            return;
+        }
+
+        // Adiciona preservando a ordem do banco
+        itens.forEach(item => addInventoryRowToTable(item, true));
+    } catch (e) {
+        console.warn('Erro ao carregar lista de inventário:', e);
+    }
+};
+
+window.handleSaveInventoryItem = async function(event) {
     if (event) event.preventDefault();
 
     const btn = document.getElementById('btn-save-item');
@@ -437,7 +435,7 @@ async function handleSaveInventoryItem(event) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
 
     try {
-        const response = await fetch('/equipamentos', {
+        const response = await fetch('/api/inventario', {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -451,12 +449,9 @@ async function handleSaveInventoryItem(event) {
             throw new Error(`Erro ${response.status}: Não foi possível salvar o ativo.`);
         }
 
-        const savedItem = response.headers.get('content-type')?.includes('application/json')
-            ? await response.json()
-            : payload;
+        const savedItem = await response.json().catch(() => payload);
 
-        addInventoryRowToTable(savedItem);
-
+        addInventoryRowToTable(savedItem, false); // Insere no topo
         showToast('Ativo cadastrado com sucesso!', 'success');
         document.getElementById('form-inventory-item')?.reset();
         closeModal('modal-item');
@@ -468,63 +463,144 @@ async function handleSaveInventoryItem(event) {
         btn.disabled = false;
         btn.innerHTML = originalText;
     }
-}
+};
 
-function addInventoryRowToTable(item) {
+window.handleImportInventory = async function(event) {
+    const input = event?.target || document.getElementById('file-inventario') || document.getElementById('inventory-import-input');
+    const arquivo = input?.files?.[0];
+    if (!arquivo) return;
+
+    const formData = new FormData();
+    formData.append('file', arquivo);
+
+    showToast('Importando planilha...', 'info');
+
+    try {
+        const response = await fetch('/api/inventario/importar', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() },
+            body: formData
+        });
+
+        const json = await response.json().catch(() => null);
+
+        if (!response.ok || (json && json.sucesso === false)) {
+            const erroMsg = json?.mensagem || `Erro ${response.status} ao importar a planilha.`;
+            throw new Error(erroMsg);
+        }
+
+        const mensagemSucesso = json?.mensagem || 'Planilha importada com sucesso!';
+        showToast(mensagemSucesso, 'success');
+
+        await loadInventoryList();
+
+    } catch (error) {
+        console.error('Erro ao importar planilha de inventário:', error);
+        showToast(error.message || 'Falha ao importar a planilha.', 'error');
+    } finally {
+        if (input) input.value = '';
+    }
+};
+
+window.deleteInventoryItem = async function(id) {
+    if (!id || id === 'undefined') {
+        showToast('Identificador do item inválido.', 'error');
+        return;
+    }
+
+    if (!confirm(`Deseja realmente remover o ativo? (ID/Patrimônio: ${id})`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/inventario/${id}`, {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: Não foi possível remover o ativo.`);
+        }
+
+        showToast('Ativo removido com sucesso!', 'success');
+        await loadInventoryList();
+
+    } catch (error) {
+        console.error('Erro ao excluir item do inventário:', error);
+        showToast(error.message || 'Falha na comunicação com o servidor.', 'error');
+    }
+};
+
+window.editItem = function(patrimonio) {
+    if (!patrimonio) return;
+    openModal('modal-item');
+    const inputPatrimonio = document.getElementById('item-patrimonio');
+    if (inputPatrimonio) inputPatrimonio.value = patrimonio;
+};
+
+function addInventoryRowToTable(item, append = false) {
     const tbody = document.getElementById('inventory-table-body');
     if (!tbody) return;
 
     const emptyRow = document.getElementById('empty-inventory-row');
-    if (emptyRow) {
-        emptyRow.remove();
-    }
+    if (emptyRow) emptyRow.remove();
 
-    const badgeClass = item.status === 'Ativo' ? 'online' : 'danger';
+    const status = item.status || 'Ativo';
+    const badgeClass = status.toUpperCase() === 'ATIVO' ? 'online' : 'danger';
+    const targetId = item.id || item.patrimonio;
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
-        <td>${item.patrimonio}</td>
-        <td>${item.nome}</td>
-        <td>${item.localizacao}</td>
-        <td><span class="badge ${badgeClass}">${item.status}</span></td>
+        <td><strong>${item.patrimonio || ''}</strong></td>
+        <td>${item.nome || item.equipamento || ''}</td>
+        <td>${item.localizacao || item.unidade || ''}</td>
+        <td><span class="badge ${badgeClass}">${status}</span></td>
         <td>
-            <button class="action-btn edit" onclick="editItem('${item.patrimonio}')"><i class="fas fa-edit"></i></button>
-            <button class="action-btn delete" onclick="openModal('modal-delete-item')"><i class="fas fa-trash"></i></button>
+            <button class="action-btn edit" onclick="editItem('${item.patrimonio}')" title="Editar"><i class="fas fa-edit"></i></button>
+            <button class="action-btn delete" onclick="deleteInventoryItem('${targetId}')" title="Excluir"><i class="fas fa-trash"></i></button>
         </td>
     `;
-    tbody.prepend(tr);
+
+    if (append) {
+        tbody.appendChild(tr);
+    } else {
+        tbody.prepend(tr);
+    }
 }
 
-function filterInventory() {
+window.filterInventory = function() {
     const searchInput = document.getElementById('inventory-search');
     if (!searchInput) return;
     const term = searchInput.value.toLowerCase();
-    const rows = document.querySelectorAll('#inventory-table tbody tr');
+    const rows = document.querySelectorAll('#inventory-table-body tr');
 
     rows.forEach(row => {
         if (row.id === 'empty-inventory-row') return;
         const text = row.innerText.toLowerCase();
         row.style.display = text.includes(term) ? '' : 'none';
     });
-}
+};
 
-// --- 6. UTILITÁRIOS ---
-function openModal(modalId) {
+// --- 6. UTILITÁRIOS E HELPERS ---
+window.openModal = function(modalId) {
     const modal = document.getElementById(modalId);
     const overlay = document.getElementById('overlay');
     if (modal && overlay) {
         modal.classList.add('active');
         overlay.classList.add('active');
     }
-}
+};
 
-function closeModal(modalId) {
+window.closeModal = function(modalId) {
     const modal = document.getElementById(modalId);
     const overlay = document.getElementById('overlay');
     if (modal && overlay) {
         modal.classList.remove('active');
         overlay.classList.remove('active');
     }
-}
+};
 
 document.getElementById('overlay')?.addEventListener('click', () => {
     document.querySelectorAll('.modal.active').forEach(modal => {
@@ -532,7 +608,7 @@ document.getElementById('overlay')?.addEventListener('click', () => {
     });
 });
 
-function showToast(message, type = 'info') {
+window.showToast = function(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
@@ -542,7 +618,7 @@ function showToast(message, type = 'info') {
 
     container.appendChild(toast);
     setTimeout(() => toast.remove(), 4000);
-}
+};
 
 function getCsrfToken() {
     const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);

@@ -1,5 +1,9 @@
 package com.example.demo.infrastructure.security;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -10,9 +14,14 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
 
 @Configuration
 @EnableWebSecurity
@@ -20,19 +29,20 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        // Manipulador de CSRF adaptado para integração com Spring Boot 3+ / Frontend JS
         CsrfTokenRequestAttributeHandler requestHandler = new CsrfTokenRequestAttributeHandler();
         requestHandler.setCsrfRequestAttributeName("_csrf");
 
         http
-            // 1. Proteção CSRF configurada para leitura via Cookie pelo Frontend
+            // 1. Proteção CSRF com repositório em Cookie e filtro de forçamento
             .csrf(csrf -> csrf
                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                 .csrfTokenRequestHandler(requestHandler)
                 .ignoringRequestMatchers("/login", "/logout")
             )
+            // ADICIONADO: Força a persistência do cookie XSRF-TOKEN no navegador
+            .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
             
-            // 2. Tratamento de exceções (Retorna HTTP 401 para requisições de API não autenticadas)
+            // 2. Tratamento de exceções
             .exceptionHandling(exception -> exception
                 .defaultAuthenticationEntryPointFor(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
@@ -51,11 +61,6 @@ public class SecurityConfig {
                     "/favicon.ico",
                     "/login",
                     "/logout",
-                    // CORREÇÃO CRÍTICA: sem isso, POST /register (cadastro de
-                    // usuário novo, por definição feito por alguém ainda
-                    // anônimo) caía em anyRequest().authenticated() e nunca
-                    // chegava no CadastroController — nenhuma conta era
-                    // criada de verdade, então nenhum login funcionava.
                     "/register",
                     "/register.html"
                 ).permitAll()
@@ -63,7 +68,7 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
 
-            // 4. Fluxo de Autenticação via Form/Endpoint
+            // 4. Fluxo de Autenticação
             .formLogin(form -> form
                 .loginPage("/index.html")
                 .loginProcessingUrl("/login")
@@ -97,9 +102,22 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // Gerenciador de Autenticação exposto para o container da aplicação
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
+    }
+
+    // Filtro para garantir a criação e atualização do cookie XSRF-TOKEN
+    private static final class CsrfCookieFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+                throws ServletException, IOException {
+            CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+            if (csrfToken != null) {
+                // Ao invocar o getToken(), forçamos a inicialização do token preguiçoso (deferred token)
+                csrfToken.getToken();
+            }
+            filterChain.doFilter(request, response);
+        }
     }
 }

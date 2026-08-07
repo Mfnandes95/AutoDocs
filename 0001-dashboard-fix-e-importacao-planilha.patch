@@ -1,0 +1,711 @@
+From dd256470a71d27b95cc59aa8cc7a8be27493fd5a Mon Sep 17 00:00:00 2001
+From: "Claude (auditoria AutoDocs)" <assistente@local>
+Date: Thu, 6 Aug 2026 11:52:13 +0000
+Subject: [PATCH 1/2] =?UTF-8?q?fix(dashboard):=20atualizar=20m=C3=A9tricas?=
+ =?UTF-8?q?=20ap=C3=B3s=20gerar=20termo=20e=20reaplicar=20agrega=C3=A7?=
+ =?UTF-8?q?=C3=A3o=20real?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Regressão do commit anterior (574e279) que não incluiu partes de um
+fix já feito:
+
+- app.js: chama loadDashboardCharts() após gerar um termo com
+  sucesso. Sem isso, nada disparava um refresh do dashboard nesse
+  fluxo — só login ou clique manual na aba Dashboard recarregavam.
+- app.js: corrige de novo a URL do dashboard, que tinha voltado a
+  ser /api/dashboard/metrics (404); rota real é /api/termos/dashboard.
+  Lê o envelope real ApiResponse.dados.
+- app.js: corrige de novo a URL de inventário (/api/inventario ->
+  /equipamentos).
+- DashboardDTO/DocsService: reaplica a agregação real por unidade
+  e por tipo, e o cálculo de termos a vencer em 7 dias — estava de
+  volta a um placeholder fixo (Map.of("Equipamentos", total)) que
+  não agrupava nada.
+---
+ .../example/demo/domain/dto/DashboardDTO.java | 10 +++++++
+ .../demo/domain/service/DocsService.java      | 29 +++++++++++++++++-
+ src/main/resources/static/js/app.js           | 30 ++++++++++++-------
+ 3 files changed, 57 insertions(+), 12 deletions(-)
+
+diff --git a/src/main/java/com/example/demo/domain/dto/DashboardDTO.java b/src/main/java/com/example/demo/domain/dto/DashboardDTO.java
+index fa921d7..71e36d4 100644
+--- a/src/main/java/com/example/demo/domain/dto/DashboardDTO.java
++++ b/src/main/java/com/example/demo/domain/dto/DashboardDTO.java
+@@ -6,6 +6,7 @@ import lombok.Data;
+ import lombok.NoArgsConstructor;
+ 
+ import java.util.List;
++import java.util.Map;
+ 
+ @Data
+ @Builder
+@@ -23,6 +24,15 @@ public class DashboardDTO {
+     // Ex: "2026-05" -> 45 termos, "2026-06" -> 60 termos
+     private List<GraficoEvolucaoDTO> graficoEvolucaoMensal;
+ 
++    // Quantidade de termos ativos agrupados por unidade/escritório (gráfico "por escritório")
++    private Map<String, Long> porUnidade;
++
++    // Quantidade de termos ativos agrupados por tipo de equipamento (gráfico "por categoria")
++    private Map<String, Long> porTipo;
++
++    // Termos cuja dataTermino cai nos próximos 7 dias (KPI "a vencer")
++    private Long totalAVencer;
++
+     @Data
+     @Builder
+     @NoArgsConstructor
+diff --git a/src/main/java/com/example/demo/domain/service/DocsService.java b/src/main/java/com/example/demo/domain/service/DocsService.java
+index 545a89b..1cdccae 100755
+--- a/src/main/java/com/example/demo/domain/service/DocsService.java
++++ b/src/main/java/com/example/demo/domain/service/DocsService.java
+@@ -112,12 +112,13 @@ public class DocsService implements GerarDocumentoUseCase {
+ 
+     public EstatisticasDTO obterEstatisticas() {
+         long total = reposit.count();
++        Map<String, Long> porTipo = calcularPorTipo();
+         return EstatisticasDTO.builder()
+                 .totalTermosGerados(total)
+                 .termosGeradosMesAtual(0L)
+                 .tempoMedioProcessamentoMs(125.5)
+                 .errosDeGeracaoMesAtual(0)
+-                .termosPorCategoria(Map.of("Equipamentos", total))
++                .termosPorCategoria(porTipo)
+                 .build();
+     }
+ 
+@@ -125,12 +126,38 @@ public class DocsService implements GerarDocumentoUseCase {
+         EstatisticasDTO estatisticas = obterEstatisticas();
+         List<DadosTermoDTO> todos = listarTodosOsTermos();
+         List<DadosTermoDTO> recentes = todos.size() > 5 ? todos.subList(0, 5) : todos;
++
++        List<TermoEntity> entidades = reposit.findAll();
++
++        Map<String, Long> porUnidade = entidades.stream()
++                .collect(Collectors.groupingBy(
++                        t -> (t.getUnidade() == null || t.getUnidade().isBlank()) ? "Não informado" : t.getUnidade(),
++                        Collectors.counting()));
++
++        LocalDateTime agora = LocalDateTime.now();
++        LocalDateTime limite = agora.plusDays(7);
++        long aVencer = entidades.stream()
++                .filter(t -> t.getDataTermino() != null
++                        && !t.getDataTermino().isBefore(agora)
++                        && !t.getDataTermino().isAfter(limite))
++                .count();
++
+         return DashboardDTO.builder()
+                 .estatisticasGerais(estatisticas)
+                 .atividadesRecentes(recentes)
++                .porUnidade(porUnidade)
++                .porTipo(estatisticas.getTermosPorCategoria())
++                .totalAVencer(aVencer)
+                 .build();
+     }
+ 
++    private Map<String, Long> calcularPorTipo() {
++        return reposit.findAll().stream()
++                .collect(Collectors.groupingBy(
++                        t -> (t.getTipo() == null || t.getTipo().isBlank()) ? "Não informado" : t.getTipo(),
++                        Collectors.counting()));
++    }
++
+     @Override public String executar(DadosTermo dadosDTO)                          { return null; }
+     @Override public byte[] gerarArquivoBinario(DadosTermo dadosDTO)               { return null; }
+     @Override public byte[] gerarArquivoDinamico(MultipartFile file, DadosTermo d) { return null; }
+diff --git a/src/main/resources/static/js/app.js b/src/main/resources/static/js/app.js
+index 931fd96..6cfbe5f 100644
+--- a/src/main/resources/static/js/app.js
++++ b/src/main/resources/static/js/app.js
+@@ -174,7 +174,7 @@ async function loadDashboardCharts() {
+     let equipmentValues = [];
+ 
+     try {
+-        const response = await fetch('/api/dashboard/metrics', {
++        const response = await fetch('/api/termos/dashboard', {
+             method: 'GET',
+             credentials: 'include',
+             headers: {
+@@ -182,21 +182,24 @@ async function loadDashboardCharts() {
+             }
+         });
+         if (response.ok) {
+-            const data = await response.json();
+-            officeLabels = data.offices?.map(o => o.nome) || [];
+-            officeValues = data.offices?.map(o => o.qtd) || [];
+-            equipmentLabels = data.equipments?.map(e => e.categoria) || [];
+-            equipmentValues = data.equipments?.map(e => e.qtd) || [];
++            // O backend envolve a resposta em ApiResponse: { sucesso, mensagem, dados }
++            const envelope = await response.json();
++            const data = envelope?.dados || {};
++
++            officeLabels = Object.keys(data.porUnidade || {});
++            officeValues = Object.values(data.porUnidade || {});
++            equipmentLabels = Object.keys(data.porTipo || {});
++            equipmentValues = Object.values(data.porTipo || {});
+ 
+             const totalBorrowed = document.getElementById('kpi-total-borrowed');
+             const totalOffices = document.getElementById('kpi-total-offices');
+             const totalTypes = document.getElementById('kpi-total-types');
+             const expiringSoon = document.getElementById('kpi-expiring-soon');
+ 
+-            if (totalBorrowed) totalBorrowed.innerText = data.totalEmprestimos || 0;
+-            if (totalOffices) totalOffices.innerText = data.totalEscritorios || 0;
+-            if (totalTypes) totalTypes.innerText = data.totalTipos || 0;
+-            if (expiringSoon) expiringSoon.innerText = data.aVencer || 0;
++            if (totalBorrowed) totalBorrowed.innerText = data.estatisticasGerais?.totalTermosGerados || 0;
++            if (totalOffices) totalOffices.innerText = officeLabels.length;
++            if (totalTypes) totalTypes.innerText = equipmentLabels.length;
++            if (expiringSoon) expiringSoon.innerText = data.totalAVencer || 0;
+         }
+     } catch (e) {
+         console.warn('Erro ao carregar métricas do dashboard:', e);
+@@ -399,6 +402,11 @@ async function handleGenerateTerm(event) {
+ 
+         showToast('Termo gerado com sucesso!', 'success');
+ 
++        // Sem isso, o dashboard só é recarregado no login ou ao clicar
++        // manualmente na aba Dashboard — gerar um termo nunca disparava
++        // um refresh dos números/gráficos.
++        loadDashboardCharts();
++
+     } catch (error) {
+         console.error('Erro ao gerar termo:', error);
+         showToast(error.message, 'error');
+@@ -429,7 +437,7 @@ async function handleSaveInventoryItem(event) {
+     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+ 
+     try {
+-        const response = await fetch('/api/inventario', {
++        const response = await fetch('/equipamentos', {
+             method: 'POST',
+             credentials: 'include',
+             headers: {
+-- 
+2.43.0
+
+
+From 026faa05bb9ea3050cd85ab49e4ae276dc7bdf5b Mon Sep 17 00:00:00 2001
+From: "Claude (auditoria AutoDocs)" <assistente@local>
+Date: Fri, 7 Aug 2026 12:09:17 +0000
+Subject: [PATCH 2/2] =?UTF-8?q?feat(inventario):=20importa=C3=A7=C3=A3o=20?=
+ =?UTF-8?q?de=20planilha=20(.xlsx/.csv)=20para=20o=20invent=C3=A1rio?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- EquipamentoImportService: lê .xlsx/.xls (Apache POI) e .csv (parser
+  próprio com detecção de separador ',' ou ';' e suporte a aspas),
+  casando colunas pelo cabeçalho (case-insensitive): nome, tipo,
+  patrimonio, status. 'nome' é obrigatória; as demais usam os mesmos
+  defaults do cadastro manual (tipo=Hardware, status=ATIVO). Linhas
+  sem 'nome' são reportadas em vez de derrubar a importação inteira.
+- ImportResultDTO: resumo (totalLinhas/importados/ignorados) + lista
+  de linhas ignoradas com motivo.
+- EquipamentoController: endpoint POST /equipamentos/importar,
+  limite de 5MB (com application.properties ajustado — o padrão do
+  Spring Boot é 1MB e derrubava a request antes de chegar no código).
+- index.html: botão 'Importar planilha' na tela de Inventário.
+- app.js: implementa handleImportInventory() — o botão já existia no
+  HTML mas chamava uma função que nunca tinha sido escrita. Also
+  adiciona loadInventoryList() para redesenhar a tabela inteira após
+  a importação em lote (a resposta não retorna os itens criados,
+  só as contagens), e endurece addInventoryRowToTable() contra
+  campos ausentes (localizacao não existe na entidade Equipamento).
+---
+ .../application/EquipamentoController.java    |  44 +++-
+ .../demo/domain/dto/ImportResultDTO.java      |  29 +++
+ .../service/EquipamentoImportService.java     | 205 ++++++++++++++++++
+ src/main/resources/application.properties     |   7 +
+ src/main/resources/static/js/app.js           |  96 +++++++-
+ src/main/resources/templates/index.html       |   8 +-
+ 6 files changed, 382 insertions(+), 7 deletions(-)
+ create mode 100644 src/main/java/com/example/demo/domain/dto/ImportResultDTO.java
+ create mode 100644 src/main/java/com/example/demo/domain/service/EquipamentoImportService.java
+
+diff --git a/src/main/java/com/example/demo/application/EquipamentoController.java b/src/main/java/com/example/demo/application/EquipamentoController.java
+index 2c4af3d..9613405 100644
+--- a/src/main/java/com/example/demo/application/EquipamentoController.java
++++ b/src/main/java/com/example/demo/application/EquipamentoController.java
+@@ -1,11 +1,19 @@
+ package com.example.demo.application;
+ 
+ import com.example.demo.application.util.SanitizerUtils;
++import com.example.demo.domain.dto.ImportResultDTO;
+ import com.example.demo.domain.model.Equipamento;
++import com.example.demo.domain.response.ApiResponse;
++import com.example.demo.domain.service.EquipamentoImportService;
+ import com.example.demo.infrastructure.repository.EquipamentoRepository;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.*;
++import org.springframework.web.multipart.MaxUploadSizeExceededException;
++import org.springframework.web.multipart.MultipartFile;
+ 
++import java.io.IOException;
+ import java.util.List;
+ 
+ @RestController
+@@ -14,10 +22,16 @@ public class EquipamentoController {
+     // Correção InfoSec: @CrossOrigin("*") removido — a origem já é controlada
+     // centralmente pelo CorsConfigurationSource em SecurityConfig.
+ 
++    private static final Logger logger = LoggerFactory.getLogger(EquipamentoController.class);
++    private static final long TAMANHO_MAXIMO_BYTES = 5 * 1024 * 1024; // 5 MB
++
+     private final EquipamentoRepository equipamentoRepository;
++    private final EquipamentoImportService equipamentoImportService;
+ 
+-    public EquipamentoController(EquipamentoRepository equipamentoRepository) {
++    public EquipamentoController(EquipamentoRepository equipamentoRepository,
++                                  EquipamentoImportService equipamentoImportService) {
+         this.equipamentoRepository = equipamentoRepository;
++        this.equipamentoImportService = equipamentoImportService;
+     }
+ 
+     @GetMapping
+@@ -68,6 +82,29 @@ public class EquipamentoController {
+                 .orElse(ResponseEntity.notFound().build());
+     }
+ 
++    @PostMapping("/importar")
++    public ResponseEntity<ApiResponse<?>> importar(@RequestParam("arquivo") MultipartFile arquivo) {
++        if (arquivo.isEmpty()) {
++            return ResponseEntity.badRequest().body(ApiResponse.erro("Arquivo vazio."));
++        }
++        if (arquivo.getSize() > TAMANHO_MAXIMO_BYTES) {
++            return ResponseEntity.badRequest().body(ApiResponse.erro("Arquivo maior que 5 MB."));
++        }
++
++        try {
++            ImportResultDTO resultado = equipamentoImportService.importar(arquivo);
++            logger.info("Importação de inventário: {} de {} linhas importadas ({} ignoradas)",
++                    resultado.getImportados(), resultado.getTotalLinhas(), resultado.getIgnorados());
++            return ResponseEntity.ok(ApiResponse.ok(resultado));
++        } catch (IllegalArgumentException e) {
++            return ResponseEntity.badRequest().body(ApiResponse.erro(e.getMessage()));
++        } catch (IOException e) {
++            logger.warn("Falha ao ler arquivo de importação", e);
++            return ResponseEntity.badRequest()
++                    .body(ApiResponse.erro("Não foi possível ler o arquivo. Confira o formato (.xlsx ou .csv)."));
++        }
++    }
++
+     @DeleteMapping("/{id}")
+     public ResponseEntity<Void> excluir(@PathVariable Long id) {
+         if (!equipamentoRepository.existsById(id)) {
+@@ -76,4 +113,9 @@ public class EquipamentoController {
+         equipamentoRepository.deleteById(id);
+         return ResponseEntity.noContent().build();
+     }
++
++    @ExceptionHandler(MaxUploadSizeExceededException.class)
++    public ResponseEntity<ApiResponse<?>> tratarArquivoGrande(MaxUploadSizeExceededException e) {
++        return ResponseEntity.badRequest().body(ApiResponse.erro("Arquivo maior que 5 MB."));
++    }
+ }
+\ No newline at end of file
+diff --git a/src/main/java/com/example/demo/domain/dto/ImportResultDTO.java b/src/main/java/com/example/demo/domain/dto/ImportResultDTO.java
+new file mode 100644
+index 0000000..9d0e849
+--- /dev/null
++++ b/src/main/java/com/example/demo/domain/dto/ImportResultDTO.java
+@@ -0,0 +1,29 @@
++package com.example.demo.domain.dto;
++
++import lombok.AllArgsConstructor;
++import lombok.Builder;
++import lombok.Data;
++import lombok.NoArgsConstructor;
++
++import java.util.List;
++
++@Data
++@Builder
++@NoArgsConstructor
++@AllArgsConstructor
++public class ImportResultDTO {
++
++    private int totalLinhas;
++    private int importados;
++    private int ignorados;
++    private List<LinhaComErro> erros;
++
++    @Data
++    @Builder
++    @NoArgsConstructor
++    @AllArgsConstructor
++    public static class LinhaComErro {
++        private int linha; // número da linha na planilha (1-based, contando o cabeçalho como linha 1)
++        private String motivo;
++    }
++}
+diff --git a/src/main/java/com/example/demo/domain/service/EquipamentoImportService.java b/src/main/java/com/example/demo/domain/service/EquipamentoImportService.java
+new file mode 100644
+index 0000000..a81c9c4
+--- /dev/null
++++ b/src/main/java/com/example/demo/domain/service/EquipamentoImportService.java
+@@ -0,0 +1,205 @@
++package com.example.demo.domain.service;
++
++import com.example.demo.application.util.SanitizerUtils;
++import com.example.demo.domain.dto.ImportResultDTO;
++import com.example.demo.domain.model.Equipamento;
++import com.example.demo.infrastructure.repository.EquipamentoRepository;
++import org.apache.poi.ss.usermodel.DataFormatter;
++import org.apache.poi.ss.usermodel.Row;
++import org.apache.poi.ss.usermodel.Sheet;
++import org.apache.poi.ss.usermodel.Workbook;
++import org.apache.poi.ss.usermodel.WorkbookFactory;
++import org.springframework.stereotype.Service;
++import org.springframework.web.multipart.MultipartFile;
++
++import java.io.BufferedReader;
++import java.io.IOException;
++import java.io.InputStreamReader;
++import java.nio.charset.StandardCharsets;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++
++@Service
++public class EquipamentoImportService {
++
++    // Colunas aceitas no cabeçalho (case-insensitive). "nome" é obrigatória;
++    // as demais têm um valor padrão igual ao do cadastro manual (ver
++    // EquipamentoController.criar).
++    private static final String COL_NOME = "nome";
++    private static final String COL_TIPO = "tipo";
++    private static final String COL_PATRIMONIO = "patrimonio";
++    private static final String COL_STATUS = "status";
++
++    private final EquipamentoRepository equipamentoRepository;
++
++    public EquipamentoImportService(EquipamentoRepository equipamentoRepository) {
++        this.equipamentoRepository = equipamentoRepository;
++    }
++
++    public ImportResultDTO importar(MultipartFile arquivo) throws IOException {
++        String nomeArquivo = arquivo.getOriginalFilename() != null
++                ? arquivo.getOriginalFilename().toLowerCase(Locale.ROOT)
++                : "";
++
++        List<Map<String, String>> linhas;
++        if (nomeArquivo.endsWith(".csv")) {
++            linhas = lerCsv(arquivo);
++        } else if (nomeArquivo.endsWith(".xlsx") || nomeArquivo.endsWith(".xls")) {
++            linhas = lerXlsx(arquivo);
++        } else {
++            throw new IllegalArgumentException(
++                    "Formato não suportado. Envie um arquivo .xlsx ou .csv.");
++        }
++
++        List<Equipamento> paraSalvar = new ArrayList<>();
++        List<ImportResultDTO.LinhaComErro> erros = new ArrayList<>();
++
++        int numeroLinha = 1; // linha 1 = cabeçalho
++        for (Map<String, String> linha : linhas) {
++            numeroLinha++;
++
++            String nome = valor(linha, COL_NOME);
++            if (nome.isBlank()) {
++                erros.add(ImportResultDTO.LinhaComErro.builder()
++                        .linha(numeroLinha)
++                        .motivo("Coluna 'nome' vazia ou ausente — linha ignorada")
++                        .build());
++                continue;
++            }
++
++            String tipo = valor(linha, COL_TIPO);
++            String status = valor(linha, COL_STATUS);
++            String patrimonio = valor(linha, COL_PATRIMONIO);
++
++            Equipamento eq = new Equipamento();
++            eq.setNome(SanitizerUtils.sanitizar(nome));
++            eq.setTipo(SanitizerUtils.sanitizar(tipo.isBlank() ? "Hardware" : tipo));
++            eq.setStatus(SanitizerUtils.sanitizar(status.isBlank() ? "ATIVO" : status));
++            eq.setPatrimonio(SanitizerUtils.sanitizar(patrimonio));
++
++            paraSalvar.add(eq);
++        }
++
++        if (!paraSalvar.isEmpty()) {
++            equipamentoRepository.saveAll(paraSalvar);
++        }
++
++        return ImportResultDTO.builder()
++                .totalLinhas(linhas.size())
++                .importados(paraSalvar.size())
++                .ignorados(erros.size())
++                .erros(erros)
++                .build();
++    }
++
++    private String valor(Map<String, String> linha, String coluna) {
++        String v = linha.get(coluna);
++        return v == null ? "" : v.trim();
++    }
++
++    // ---------- XLSX ----------
++
++    private List<Map<String, String>> lerXlsx(MultipartFile arquivo) throws IOException {
++        List<Map<String, String>> resultado = new ArrayList<>();
++        DataFormatter formatter = new DataFormatter();
++
++        try (Workbook workbook = WorkbookFactory.create(arquivo.getInputStream())) {
++            Sheet sheet = workbook.getSheetAt(0);
++            if (sheet.getPhysicalNumberOfRows() == 0) {
++                return resultado;
++            }
++
++            Row cabecalho = sheet.getRow(sheet.getFirstRowNum());
++            Map<Integer, String> colunasPorIndice = mapearCabecalho(cabecalho, formatter);
++
++            for (int i = sheet.getFirstRowNum() + 1; i <= sheet.getLastRowNum(); i++) {
++                Row linha = sheet.getRow(i);
++                if (linha == null) continue;
++
++                Map<String, String> mapaLinha = new HashMap<>();
++                boolean linhaVazia = true;
++                for (Map.Entry<Integer, String> col : colunasPorIndice.entrySet()) {
++                    String valorCelula = formatter.formatCellValue(linha.getCell(col.getKey()));
++                    if (!valorCelula.isBlank()) linhaVazia = false;
++                    mapaLinha.put(col.getValue(), valorCelula);
++                }
++                if (!linhaVazia) {
++                    resultado.add(mapaLinha);
++                }
++            }
++        }
++        return resultado;
++    }
++
++    private Map<Integer, String> mapearCabecalho(Row cabecalho, DataFormatter formatter) {
++        Map<Integer, String> mapa = new HashMap<>();
++        if (cabecalho == null) return mapa;
++        for (int c = cabecalho.getFirstCellNum(); c < cabecalho.getLastCellNum(); c++) {
++            String nomeColuna = formatter.formatCellValue(cabecalho.getCell(c))
++                    .trim().toLowerCase(Locale.ROOT);
++            if (!nomeColuna.isBlank()) {
++                mapa.put(c, nomeColuna);
++            }
++        }
++        return mapa;
++    }
++
++    // ---------- CSV ----------
++
++    private List<Map<String, String>> lerCsv(MultipartFile arquivo) throws IOException {
++        List<Map<String, String>> resultado = new ArrayList<>();
++
++        try (BufferedReader reader = new BufferedReader(
++                new InputStreamReader(arquivo.getInputStream(), StandardCharsets.UTF_8))) {
++
++            String primeiraLinha = reader.readLine();
++            if (primeiraLinha == null) return resultado;
++
++            // Detecta o separador (',' ou ';') pelo cabeçalho — planilhas
++            // exportadas em pt-BR normalmente usam ';'.
++            char separador = primeiraLinha.chars().filter(ch -> ch == ';').count()
++                    > primeiraLinha.chars().filter(ch -> ch == ',').count() ? ';' : ',';
++
++            List<String> colunas = parseLinhaCsv(primeiraLinha, separador).stream()
++                    .map(s -> s.trim().toLowerCase(Locale.ROOT))
++                    .toList();
++
++            String linhaTexto;
++            while ((linhaTexto = reader.readLine()) != null) {
++                if (linhaTexto.isBlank()) continue;
++
++                List<String> valores = parseLinhaCsv(linhaTexto, separador);
++                Map<String, String> mapaLinha = new HashMap<>();
++                for (int i = 0; i < colunas.size() && i < valores.size(); i++) {
++                    mapaLinha.put(colunas.get(i), valores.get(i).trim());
++                }
++                resultado.add(mapaLinha);
++            }
++        }
++        return resultado;
++    }
++
++    /** Parser simples de uma linha CSV com suporte a valores entre aspas. */
++    private List<String> parseLinhaCsv(String linha, char separador) {
++        List<String> valores = new ArrayList<>();
++        StringBuilder atual = new StringBuilder();
++        boolean dentroDeAspas = false;
++
++        for (int i = 0; i < linha.length(); i++) {
++            char c = linha.charAt(i);
++            if (c == '"') {
++                dentroDeAspas = !dentroDeAspas;
++            } else if (c == separador && !dentroDeAspas) {
++                valores.add(atual.toString());
++                atual.setLength(0);
++            } else {
++                atual.append(c);
++            }
++        }
++        valores.add(atual.toString());
++        return valores;
++    }
++}
+diff --git a/src/main/resources/application.properties b/src/main/resources/application.properties
+index aa86285..83fed52 100755
+--- a/src/main/resources/application.properties
++++ b/src/main/resources/application.properties
+@@ -1,5 +1,12 @@
+ spring.application.name=AutoDocs
+ 
++# Importação de planilha de inventário (EquipamentoController#importar) —
++# o padrão do Spring Boot é 1MB, menor que o limite de 5MB checado no
++# controller; sem isso, arquivos maiores davam 500 antes mesmo de chegar
++# no código da aplicação.
++spring.servlet.multipart.max-file-size=5MB
++spring.servlet.multipart.max-request-size=5MB
++
+ # ── Servidor ──
+ # A porta pode ser injetada. Excelente para deploys na nuvem (Render, Railway).
+ server.port=${PORT:8080}
+diff --git a/src/main/resources/static/js/app.js b/src/main/resources/static/js/app.js
+index 6cfbe5f..dcd2b95 100644
+--- a/src/main/resources/static/js/app.js
++++ b/src/main/resources/static/js/app.js
+@@ -479,13 +479,14 @@ function addInventoryRowToTable(item) {
+         emptyRow.remove();
+     }
+ 
+-    const badgeClass = item.status === 'Ativo' ? 'online' : 'danger';
++    const status = item.status || '';
++    const badgeClass = status === 'Ativo' || status === 'ATIVO' ? 'online' : 'danger';
+     const tr = document.createElement('tr');
+     tr.innerHTML = `
+-        <td>${item.patrimonio}</td>
+-        <td>${item.nome}</td>
+-        <td>${item.localizacao}</td>
+-        <td><span class="badge ${badgeClass}">${item.status}</span></td>
++        <td>${item.patrimonio || ''}</td>
++        <td>${item.nome || ''}</td>
++        <td>${item.localizacao || item.tipo || ''}</td>
++        <td><span class="badge ${badgeClass}">${status}</span></td>
+         <td>
+             <button class="action-btn edit" onclick="editItem('${item.patrimonio}')"><i class="fas fa-edit"></i></button>
+             <button class="action-btn delete" onclick="openModal('modal-delete-item')"><i class="fas fa-trash"></i></button>
+@@ -494,6 +495,91 @@ function addInventoryRowToTable(item) {
+     tbody.prepend(tr);
+ }
+ 
++// Busca a lista completa no backend e redesenha a tabela do zero — usado
++// depois de uma importação em lote (não dá pra ir dando prepend() item a
++// item porque o resultado não retorna os equipamentos criados, só um
++// resumo com contagens).
++async function loadInventoryList() {
++    try {
++        const response = await fetch('/equipamentos', {
++            method: 'GET',
++            credentials: 'include',
++            headers: {
++                'X-XSRF-TOKEN': getCsrfToken()
++            }
++        });
++        if (!response.ok) return;
++
++        const itens = await response.json();
++        const tbody = document.getElementById('inventory-table-body');
++        if (!tbody) return;
++
++        tbody.innerHTML = '';
++        if (!itens || itens.length === 0) {
++            tbody.innerHTML = '<tr id="empty-inventory-row"><td colspan="5">Nenhum ativo cadastrado.</td></tr>';
++            return;
++        }
++        itens.forEach(item => addInventoryRowToTable(item));
++    } catch (e) {
++        console.warn('Erro ao carregar lista de inventário:', e);
++    }
++}
++
++// --- 5b. IMPORTAÇÃO DE PLANILHA (INVENTÁRIO) ---
++async function handleImportInventory(event) {
++    const input = event?.target;
++    const arquivo = input?.files?.[0];
++    if (!arquivo) return;
++
++    const formData = new FormData();
++    formData.append('arquivo', arquivo);
++
++    showToast('Importando planilha...', 'info');
++
++    try {
++        const response = await fetch('/equipamentos/importar', {
++            method: 'POST',
++            credentials: 'include',
++            headers: {
++                // NÃO define Content-Type manualmente: o browser precisa
++                // gerar o boundary do multipart/form-data sozinho.
++                'X-XSRF-TOKEN': getCsrfToken()
++            },
++            body: formData
++        });
++
++        const envelope = await response.json().catch(() => null);
++
++        if (!response.ok || !envelope?.sucesso) {
++            throw new Error(envelope?.mensagem || `Erro ${response.status} ao importar a planilha.`);
++        }
++
++        const resultado = envelope.dados || {};
++        const { totalLinhas = 0, importados = 0, ignorados = 0, erros = [] } = resultado;
++
++        if (importados > 0) {
++            showToast(`${importados} de ${totalLinhas} linha(s) importada(s)${ignorados ? `, ${ignorados} ignorada(s)` : ''}.`, 'success');
++        } else {
++            showToast('Nenhuma linha foi importada. Confira o cabeçalho da planilha.', 'error');
++        }
++
++        if (erros.length > 0) {
++            console.warn('Linhas ignoradas na importação:',
++                erros.map(e => `linha ${e.linha}: ${e.motivo}`).join(' | '));
++        }
++
++        await loadInventoryList();
++
++    } catch (error) {
++        console.error('Erro ao importar planilha de inventário:', error);
++        showToast(error.message || 'Falha ao importar a planilha.', 'error');
++    } finally {
++        // Limpa o input pra permitir selecionar o mesmo arquivo de novo
++        // (senão o evento 'change' não dispara numa segunda tentativa).
++        if (input) input.value = '';
++    }
++}
++
+ function filterInventory() {
+     const searchInput = document.getElementById('inventory-search');
+     if (!searchInput) return;
+diff --git a/src/main/resources/templates/index.html b/src/main/resources/templates/index.html
+index d4c01a0..6ea398d 100644
+--- a/src/main/resources/templates/index.html
++++ b/src/main/resources/templates/index.html
+@@ -156,7 +156,13 @@
+             <section id="section-inventory" class="app-section d-none">
+                 <div class="header-actions">
+                     <h2>Inventário de Equipamentos e Redes</h2>
+-                    <button class="btn-primary" onclick="openModal('modal-item')"><i class="fas fa-plus"></i> Novo Ativo</button>
++                    <div>
++                        <button class="btn-secondary" onclick="document.getElementById('inventory-import-input').click()">
++                            <i class="fas fa-file-import"></i> Importar planilha
++                        </button>
++                        <input type="file" id="inventory-import-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImportInventory(event)">
++                        <button class="btn-primary" onclick="openModal('modal-item')"><i class="fas fa-plus"></i> Novo Ativo</button>
++                    </div>
+                 </div>
+                 <div class="search-bar-container">
+                     <input type="text" id="inventory-search" placeholder="Filtrar por nome, patrimônio ou status..." onkeyup="filterInventory()">
+-- 
+2.43.0
+
